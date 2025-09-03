@@ -7,7 +7,7 @@ from typing import Any, Dict, Optional, Type, Union
 
 from langchain_core.callbacks import CallbackManagerForToolRun, AsyncCallbackManagerForToolRun
 from langchain_core.tools import BaseTool
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, PrivateAttr
 
 from langchain_steel.utils.client import SteelClient, AsyncSteelClient
 from langchain_steel.utils.config import SteelConfig
@@ -34,9 +34,9 @@ class BaseSteelTool(BaseTool, ABC):
     config: Optional[SteelConfig] = Field(default=None, exclude=True)
     session_reuse: bool = Field(default=True, description="Whether to reuse browser sessions")
     
-    # Internal clients
-    _client: Optional[SteelClient] = Field(default=None, exclude=True, repr=False)
-    _async_client: Optional[AsyncSteelClient] = Field(default=None, exclude=True, repr=False)
+    # Internal clients - using PrivateAttr since they start with underscore
+    _client: Optional[SteelClient] = PrivateAttr(default=None)
+    _async_client: Optional[AsyncSteelClient] = PrivateAttr(default=None)
     
     class Config:
         """Pydantic configuration."""

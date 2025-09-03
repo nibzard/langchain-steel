@@ -12,6 +12,7 @@ from tenacity import (
     Retrying,
     before_sleep_log,
     retry_if_exception_type,
+    retry_if_exception,
     stop_after_attempt,
     wait_exponential,
     wait_random_exponential,
@@ -120,8 +121,10 @@ class SteelRetry:
         return Retrying(
             stop=stop_after_attempt(max_attempts),
             wait=wait_strategy,
-            retry=retry_if_exception_type(cls.RETRYABLE_EXCEPTIONS) | 
-                  retry_if_exception_type(SteelAPIError).with_condition(cls.should_retry_api_error),
+            retry=(
+                retry_if_exception_type(cls.RETRYABLE_EXCEPTIONS) | 
+                retry_if_exception(cls.should_retry_exception)
+            ),
             before_sleep=before_sleep_log(logger, logging.WARNING),
             reraise=reraise,
         )
@@ -161,8 +164,10 @@ class SteelRetry:
         return AsyncRetrying(
             stop=stop_after_attempt(max_attempts),
             wait=wait_strategy,
-            retry=retry_if_exception_type(cls.RETRYABLE_EXCEPTIONS) |
-                  retry_if_exception_type(SteelAPIError).with_condition(cls.should_retry_api_error),
+            retry=(
+                retry_if_exception_type(cls.RETRYABLE_EXCEPTIONS) |
+                retry_if_exception(cls.should_retry_exception)
+            ),
             before_sleep=before_sleep_log(logger, logging.WARNING),
             reraise=reraise,
         )

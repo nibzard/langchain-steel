@@ -162,7 +162,6 @@ class SteelClient:
         if self.config.enable_logging:
             logging.basicConfig(level=logging.INFO)
     
-    @retry_on_steel_error(max_attempts=3)
     def create_session(
         self, 
         reuse_existing: bool = True,
@@ -214,7 +213,6 @@ class SteelClient:
                     original_error=e,
                 )
     
-    @retry_on_steel_error(max_attempts=2)
     def release_session(self, session_id: str) -> None:
         """Release and cleanup Steel session.
         
@@ -231,7 +229,6 @@ class SteelClient:
             # Remove from local pool even if API call fails
             self.session_manager.remove_session(session_id)
     
-    @retry_on_steel_error(max_attempts=3)
     def scrape(
         self,
         url: str,
@@ -365,7 +362,6 @@ class AsyncSteelClient:
         # Session management
         self.session_manager = SteelSessionManager()
     
-    @async_retry_on_steel_error(max_attempts=3)
     async def create_session(
         self, 
         reuse_existing: bool = True,
@@ -414,7 +410,6 @@ class AsyncSteelClient:
                     original_error=e,
                 )
     
-    @async_retry_on_steel_error(max_attempts=2)
     async def release_session(self, session_id: str) -> None:
         """Release and cleanup Steel session asynchronously.
         

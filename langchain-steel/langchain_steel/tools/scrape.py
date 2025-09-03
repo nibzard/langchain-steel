@@ -1,7 +1,7 @@
 """Steel scrape tool for single-page content extraction."""
 
 import logging
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, Type
 
 from langchain_core.callbacks import CallbackManagerForToolRun, AsyncCallbackManagerForToolRun
 from pydantic import BaseModel, Field
@@ -87,7 +87,7 @@ class SteelScrapeTool(BaseSteelTool):
         "Input should be a URL string or dict with url and optional parameters like format, "
         "wait_for_selector, delay_ms, screenshot, extract_images, extract_links, and custom_headers."
     )
-    args_schema = SteelScrapeInput
+    args_schema: Type[BaseModel] = SteelScrapeInput
     
     def _run(
         self,
