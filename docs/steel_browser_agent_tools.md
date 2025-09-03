@@ -15,6 +15,67 @@ import os
 os.environ["STEEL_API_KEY"] = "your-api-key"
 ```
 
+## Steel Plan Compatibility
+
+Steel offers different plan tiers with varying feature availability. The LangChain-Steel integration is configured to work with all plan levels by using sensible defaults.
+
+### Hobby Plan (Free/Entry Level)
+- ✅ Basic browser automation
+- ❌ CAPTCHA solving (requires plan upgrade)
+- ❌ Stealth browsing features (requires plan upgrade)
+- ❌ Proxy usage (requires plan upgrade)
+
+### Professional/Enterprise Plans
+- ✅ All hobby plan features
+- ✅ Automatic CAPTCHA solving
+- ✅ Advanced stealth browsing features
+- ✅ Proxy rotation and geographic targeting
+- ✅ Higher rate limits and concurrent sessions
+- ✅ Advanced session persistence
+
+### Default Configuration
+
+The integration defaults to **hobby plan compatible settings**:
+- `use_proxy=False` - Avoids proxy-related errors on hobby plans
+- `solve_captcha=False` - Disabled for hobby plan compatibility
+- `stealth_mode=False` - Disabled for hobby plan compatibility
+
+### Enabling Advanced Features
+
+If you have a Professional or Enterprise plan, you can enable advanced features:
+
+**Option 1: Environment Variables**
+```bash
+export STEEL_USE_PROXY=true
+export STEEL_SOLVE_CAPTCHA=true
+export STEEL_STEALTH_MODE=true
+```
+
+**Option 2: Configuration Object**
+```python
+from langchain_steel import SteelBrowserAgent, SteelConfig
+
+config = SteelConfig(
+    use_proxy=True,
+    solve_captcha=True,
+    stealth_mode=True
+)
+agent = SteelBrowserAgent(config=config)
+```
+
+**Option 3: Session Options**
+```python
+result = agent.run({
+    "task": "Your automation task here",
+    "session_options": {
+        "use_proxy": True,
+        "solve_captcha": True,
+        "block_ads": True,  # Part of stealth features
+        "region": "us"  # Proxy region
+    }
+})
+```
+
 ## Available Tools
 
 ### SteelBrowserAgent
@@ -552,6 +613,54 @@ Navigate to admin panel, generate monthly report,
 and email it to stakeholders
 """)
 ```
+
+## Troubleshooting
+
+### Common Issues
+
+**"Proxy use is not available on the hobby plan" Error**
+```
+Solution: The integration defaults to hobby plan compatibility (use_proxy=False).
+If you see this error, it means proxy usage was enabled somewhere.
+Check your configuration or session options.
+```
+
+**"CAPTCHA solving is not available on the hobby plan" Error**
+```
+Solution: The integration defaults to solve_captcha=False for hobby compatibility.
+If you see this error, check that solve_captcha wasn't enabled in your
+configuration or session options.
+```
+
+**"Stealth mode is not available on the hobby plan" Error**
+```
+Solution: The integration defaults to stealth_mode=False for hobby compatibility.
+If you see this error, check that stealth features weren't enabled in your
+configuration or session options.
+```
+
+**"SessionsResource.create() got an unexpected keyword argument" Error**
+```
+Solution: This indicates a parameter mismatch with the Steel SDK.
+Ensure you're using the latest version of langchain-steel that
+maps configuration parameters correctly to the Steel SDK.
+```
+
+**Import Errors**
+```
+Solution: Make sure langchain-steel is properly installed:
+pip install langchain-steel
+pip install steel-sdk
+```
+
+### Plan Upgrade Benefits
+
+If you're on the hobby plan and need advanced features:
+- **Proxy Support**: Geographic targeting and IP rotation
+- **Higher Rate Limits**: More concurrent sessions and requests
+- **Advanced Session Features**: Extended timeouts and persistence
+
+Contact Steel support or visit [steel.dev](https://steel.dev) to upgrade your plan.
 
 ## API Reference
 

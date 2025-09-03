@@ -280,7 +280,7 @@ class SteelScrapeTool(BaseSteelTool):
         """Extract content from Steel API response.
         
         Args:
-            response: Steel API response
+            response: Steel API response (ScrapeResponse object)
             url: Original URL
             format: Requested format
             
@@ -291,7 +291,32 @@ class SteelScrapeTool(BaseSteelTool):
             SteelContentError: If content extraction fails
         """
         try:
-            if isinstance(response, dict):
+            # Handle Steel SDK ScrapeResponse object
+            if hasattr(response, 'content'):
+                content_obj = response.content
+                
+                # Extract based on requested format
+                if format == "markdown" and hasattr(content_obj, 'markdown') and content_obj.markdown:
+                    return content_obj.markdown.strip()
+                elif format == "html" and hasattr(content_obj, 'html') and content_obj.html:
+                    return content_obj.html.strip()
+                elif format == "readability" and hasattr(content_obj, 'readability') and content_obj.readability:
+                    return content_obj.readability.strip()
+                elif format == "cleaned_html" and hasattr(content_obj, 'cleaned_html') and content_obj.cleaned_html:
+                    return content_obj.cleaned_html.strip()
+                
+                # Fallback to any available content
+                if hasattr(content_obj, 'markdown') and content_obj.markdown:
+                    return content_obj.markdown.strip()
+                elif hasattr(content_obj, 'readability') and content_obj.readability:
+                    return content_obj.readability.strip()
+                elif hasattr(content_obj, 'cleaned_html') and content_obj.cleaned_html:
+                    return content_obj.cleaned_html.strip()
+                elif hasattr(content_obj, 'html') and content_obj.html:
+                    return content_obj.html.strip()
+            
+            # Legacy dict-based response handling
+            elif isinstance(response, dict):
                 # Try different content keys based on format
                 content_keys = ["content", "data", "body", "text", "html", "markdown"]
                 

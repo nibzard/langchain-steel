@@ -60,10 +60,10 @@ class SteelConfig:
     session_timeout: int = 300  # 5 minutes
     api_timeout: int = 60000    # 60 seconds in milliseconds
     
-    # Browser features
-    use_proxy: bool = True
-    solve_captcha: bool = True
-    stealth_mode: bool = True
+    # Browser features - Default to False for hobby plan compatibility
+    use_proxy: bool = False
+    solve_captcha: bool = False
+    stealth_mode: bool = False
     
     # Retry configuration
     max_retries: int = 3
@@ -130,9 +130,9 @@ class SteelConfig:
         env_config = {
             "api_key": os.getenv("STEEL_API_KEY", ""),
             "base_url": os.getenv("STEEL_BASE_URL", "https://api.steel.dev"),
-            "use_proxy": os.getenv("STEEL_USE_PROXY", "true").lower() == "true",
-            "solve_captcha": os.getenv("STEEL_SOLVE_CAPTCHA", "true").lower() == "true",
-            "stealth_mode": os.getenv("STEEL_STEALTH_MODE", "true").lower() == "true",
+            "use_proxy": os.getenv("STEEL_USE_PROXY", "false").lower() == "true",
+            "solve_captcha": os.getenv("STEEL_SOLVE_CAPTCHA", "false").lower() == "true",
+            "stealth_mode": os.getenv("STEEL_STEALTH_MODE", "false").lower() == "true",
         }
         
         # Parse numeric environment variables
@@ -172,22 +172,30 @@ class SteelConfig:
             Dictionary suitable for Steel.sessions.create() call
         """
         options = {
+            # Valid Steel SDK parameters
             "api_timeout": self.api_timeout,
-            "session_timeout": self.session_timeout,
-            "use_proxy": self.use_proxy,
             "solve_captcha": self.solve_captcha,
         }
         
+        # Handle proxy configuration - explicitly set to avoid Steel SDK defaults
+        options["use_proxy"] = self.use_proxy
+        
+        if self.use_proxy:
+            # Add proxy-specific options if configured
+            if self.proxy_config:
+                if self.proxy_config.country:
+                    options["region"] = self.proxy_config.country.lower()
+        
+        # Add user agent if specified
         if self.user_agent:
             options["user_agent"] = self.user_agent
         
-        # Add proxy configuration
-        if self.proxy_config and self.use_proxy:
-            if self.proxy_config.country:
-                options["proxy_country"] = self.proxy_config.country
-            options["sticky_session"] = self.proxy_config.sticky_session
+        # Add stealth configuration if enabled
+        if self.stealth_mode:
+            options["block_ads"] = True
+            # Note: stealth_config structure needs to be determined from Steel SDK docs
         
-        # Merge with custom session options
+        # Merge with custom session options (these override defaults)
         options.update(self.session_options)
         
         return options

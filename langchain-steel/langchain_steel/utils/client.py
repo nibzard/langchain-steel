@@ -262,18 +262,18 @@ class SteelClient:
             if format is None:
                 format = self.config.default_format.value
             
-            # Prepare scrape parameters
+            # Prepare scrape parameters for Steel SDK
+            # Note: Steel SDK scrape() doesn't accept session_id as parameter
             scrape_params = {
                 "url": url,
-                "session_id": session.id,
                 "format": format,
                 **scrape_options
             }
             
-            logger.info(f"Scraping URL: {url} (format: {format})")
+            logger.info(f"Scraping URL: {url} (format: {format}) with session: {session.id}")
             
             # Perform scraping through Steel SDK
-            # Note: This assumes Steel SDK has a scrape method - adjust based on actual API
+            # The session is managed separately from the scrape parameters
             result = self._client.scrape(**scrape_params)
             
             logger.info(f"Successfully scraped {url}")

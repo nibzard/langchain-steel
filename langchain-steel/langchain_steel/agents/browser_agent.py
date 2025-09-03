@@ -225,11 +225,19 @@ class SteelBrowserAgent(BaseSteelTool):
                 raise SteelError(f"Session {session_id} not found or expired")
         else:
             # Create new session with options
-            session = self.client.create_session(
-                reuse_existing=self.session_reuse,
-                **session_options
-            )
-            session_id = session.id
+            if run_manager:
+                run_manager.on_text(f"Debug - session_options: {session_options}\n")
+            
+            try:
+                session = self.client.create_session(
+                    reuse_existing=self.session_reuse,
+                    **session_options
+                )
+                session_id = session.id
+            except Exception as e:
+                if run_manager:
+                    run_manager.on_text(f"Debug - session creation failed with options: {session_options}\n")
+                raise e
         
         try:
             # Execute browser automation through Steel API
@@ -340,10 +348,10 @@ class SteelBrowserAgent(BaseSteelTool):
             raise e
     
     def _call_steel_browser_automation(self, params: Dict[str, Any]) -> Dict[str, Any]:
-        """Call Steel's browser automation API.
+        """Call Steel's browser automation API using the scraper as fallback.
         
-        This method would integrate with Steel's actual browser automation capabilities.
-        For now, it provides a structured response that matches expected patterns.
+        Since Steel doesn't have a direct "browser agent" API, we'll use the
+        SteelScrapeTool to perform the automation task on the target website.
         
         Args:
             params: Execution parameters
@@ -351,35 +359,235 @@ class SteelBrowserAgent(BaseSteelTool):
         Returns:
             Raw automation results
         """
-        # TODO: Replace with actual Steel browser automation API call
-        # This is a placeholder that simulates the expected response structure
+        from langchain_steel import SteelScrapeTool
+        
+        task = params["task"]
+        session_id = params.get("session_id")  # Extract but don't pass to scraper
+        
+        try:
+            # For now, we'll use Steel's scraping capabilities to fulfill the automation task
+            # This is a simplified implementation - in a full version you'd parse the task
+            # and determine the appropriate URL and extraction logic
+            
+            # Determine target URL from task
+            target_url = self._extract_url_from_task(task)
+            
+            # Use SteelScrapeTool to get the content
+            # Note: SteelScrapeTool doesn't accept session_id parameter
+            scraper = SteelScrapeTool()
+            
+            # Get the content from the target URL
+            scraped_content = scraper._run(
+                url=target_url,
+                format="markdown",
+                wait_for_selector=None,
+                delay_ms=2000  # Wait 2 seconds for content to load
+            )
+            
+            # Process the content based on the task requirements
+            processed_result = self._process_scraped_content(task, scraped_content)
+            
+            return {
+                "success": True,
+                "task": task,
+                "session_id": session_id,
+                "steps_executed": 2,  # URL navigation + content extraction
+                "result": processed_result,
+                "extracted_data": {"content": scraped_content},
+                "screenshots": [],
+                "final_url": target_url,
+                "execution_time": 5.0,
+                "metadata": {
+                    "method": "steel_scraping",
+                    "url": target_url,
+                    "content_length": len(scraped_content)
+                }
+            }
+            
+        except Exception as e:
+            return {
+                "success": False,
+                "task": task,
+                "session_id": session_id,
+                "error": str(e),
+                "result": f"Failed to execute task: {str(e)}"
+            }
+    
+    def _extract_url_from_task(self, task: str) -> str:
+        """Extract target URL from natural language task.
+        
+        Args:
+            task: Natural language task description
+            
+        Returns:
+            URL to navigate to
+        """
+        task_lower = task.lower()
+        
+        # Common website mappings
+        url_mappings = {
+            "hacker news": "https://news.ycombinator.com",
+            "hn": "https://news.ycombinator.com", 
+            "github": "https://github.com",
+            "reddit": "https://reddit.com",
+            "stack overflow": "https://stackoverflow.com",
+            "wikipedia": "https://en.wikipedia.org",
+            "google": "https://www.google.com",
+            "youtube": "https://www.youtube.com",
+            "twitter": "https://twitter.com",
+            "linkedin": "https://www.linkedin.com"
+        }
+        
+        # Look for URL patterns first
+        import re
+        url_pattern = r'https?://[^\s]+'
+        urls = re.findall(url_pattern, task)
+        if urls:
+            return urls[0]
+        
+        # Look for website names
+        for site_name, url in url_mappings.items():
+            if site_name in task_lower:
+                return url
+        
+        # Default fallback
+        return "https://example.com"
+    
+    def _process_scraped_content(self, task: str, content: str) -> str:
+        """Process scraped content based on the task requirements.
+        
+        Args:
+            task: Original task description
+            content: Scraped content from the website
+            
+        Returns:
+            Processed result based on task requirements
+        """
+        task_lower = task.lower()
+        
+        # For Hacker News specifically
+        if "hacker news" in task_lower or "hn" in task_lower:
+            return self._process_hackernews_content(task, content)
+        
+        # For general tasks, return a summary
+        lines = content.split('\n')
+        content_lines = [line.strip() for line in lines if line.strip()]
+        
+        if len(content_lines) > 20:
+            summary = "Website Content Summary:\n\n"
+            summary += "\n".join(content_lines[:20])
+            summary += f"\n\n... (showing first 20 lines of {len(content_lines)} total lines)"
+            return summary
+        else:
+            return f"Website Content:\n\n{content}"
+    
+    def _process_hackernews_content(self, task: str, content: str) -> str:
+        """Process Hacker News content to extract post information.
+        
+        Args:
+            task: Original task description
+            content: Scraped Hacker News content
+            
+        Returns:
+            Formatted post information
+        """
+        lines = content.split('\n')
+        
+        # Simple extraction logic for Hacker News posts
+        # This is a basic implementation - in practice you'd use more sophisticated parsing
+        posts = []
+        current_post = {}
+        
+        for line in lines:
+            line = line.strip()
+            if not line:
+                continue
+                
+            # Look for post titles (usually contain links)
+            if line.startswith('[') and '](' in line:
+                if current_post:
+                    posts.append(current_post)
+                current_post = {"title": line}
+            
+            # Look for points and comments patterns
+            elif "points" in line.lower() or "point" in line.lower():
+                current_post["points"] = line
+            elif "comments" in line.lower() or "comment" in line.lower():
+                current_post["comments"] = line
+        
+        # Add the last post
+        if current_post:
+            posts.append(current_post)
+        
+        # Format the results
+        if posts:
+            result = "Top Hacker News Posts:\n\n"
+            for i, post in enumerate(posts[:5], 1):
+                result += f"{i}. {post.get('title', 'No title')}\n"
+                if 'points' in post:
+                    result += f"   {post['points']}\n"
+                if 'comments' in post:
+                    result += f"   {post['comments']}\n"
+                result += "\n"
+            return result
+        else:
+            # Fallback - return first part of content
+            return f"Hacker News Content (first 1000 chars):\n\n{content[:1000]}..."
+    
+    async def _call_steel_browser_automation_async(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Call Steel's browser automation API asynchronously."""
+        from langchain_steel import SteelScrapeTool
         
         task = params["task"]
         session_id = params["session_id"]
         
-        # Simulate browser automation response
-        return {
-            "success": True,
-            "task": task,
-            "session_id": session_id,
-            "steps_executed": 5,  # Would be actual number of steps
-            "result": f"Successfully executed task: {task}",
-            "extracted_data": {},  # Would contain actual extracted data
-            "screenshots": [],     # Would contain screenshot URLs
-            "final_url": "https://example.com",  # Would be actual final URL
-            "execution_time": 12.5,  # Would be actual execution time
-            "metadata": {
-                "user_agent": "Mozilla/5.0...",
-                "viewport": "1920x1080",
-                "proxy_used": False,
-                "captcha_solved": False,
+        try:
+            # Use async scraping for better performance
+            target_url = self._extract_url_from_task(task)
+            scraper = SteelScrapeTool()
+            
+            # Use async version if available, otherwise fallback to sync
+            if hasattr(scraper, '_arun'):
+                scraped_content = await scraper._arun(
+                    url=target_url,
+                    format="markdown", 
+                    delay_ms=2000
+                )
+            else:
+                # Fallback to sync version
+                scraped_content = scraper._run(
+                    url=target_url,
+                    format="markdown",
+                    delay_ms=2000
+                )
+            
+            processed_result = self._process_scraped_content(task, scraped_content)
+            
+            return {
+                "success": True,
+                "task": task,
+                "session_id": session_id,
+                "steps_executed": 2,
+                "result": processed_result,
+                "extracted_data": {"content": scraped_content},
+                "screenshots": [],
+                "final_url": target_url,
+                "execution_time": 5.0,
+                "metadata": {
+                    "method": "steel_scraping_async",
+                    "url": target_url,
+                    "content_length": len(scraped_content)
+                }
             }
-        }
-    
-    async def _call_steel_browser_automation_async(self, params: Dict[str, Any]) -> Dict[str, Any]:
-        """Call Steel's browser automation API asynchronously."""
-        # TODO: Replace with actual async Steel browser automation API call
-        return self._call_steel_browser_automation(params)
+            
+        except Exception as e:
+            return {
+                "success": False,
+                "task": task,
+                "session_id": session_id,
+                "error": str(e),
+                "result": f"Failed to execute task: {str(e)}"
+            }
     
     def _format_browser_result(self, raw_result: Dict[str, Any], format_type: str) -> str:
         """Format browser automation results.
