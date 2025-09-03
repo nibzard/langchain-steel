@@ -110,14 +110,6 @@ print(result)
 
 - **`SteelBrowserAgent`**: Natural language browser automation
 
-## 📊 Performance Comparison
-
-| Solution | Token Efficiency | Setup Complexity | AI Optimization | Enterprise Features |
-|----------|------------------|-------------------|----------------|-------------------|
-| **Steel.dev** | ⭐⭐⭐⭐⭐ (80% reduction) | ⭐⭐⭐⭐⭐ Simple | ⭐⭐⭐⭐⭐ Native | ⭐⭐⭐⭐⭐ Full |
-| Browserbase | ⭐⭐⭐ Good | ⭐⭐⭐⭐ Easy | ⭐⭐ Limited | ⭐⭐⭐⭐ Good |
-| Browserless | ⭐⭐ Basic | ⭐⭐⭐ Moderate | ⭐ None | ⭐⭐ Basic |
-| Selenium | ⭐ Poor | ⭐ Complex | ⭐ None | ⭐⭐ Limited |
 
 ## 🛠️ Advanced Configuration
 
