@@ -1,0 +1,8 @@
+# Core dependencies for langchain-steel
+langchain-core>=0.1.0
+langchain-community>=0.0.10
+steel-sdk>=0.1.0b9
+pydantic>=1.10.0,<3.0.0
+httpx>=0.24.0
+aiofiles>=23.0.0
+tenacity>=8.0.0
