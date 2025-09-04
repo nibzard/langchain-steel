@@ -46,9 +46,9 @@ class TestSteelConfig:
         """Test default configuration values."""
         config = SteelConfig(api_key="test")
         assert config.base_url == "https://api.steel.dev"
-        assert config.use_proxy is True
-        assert config.solve_captcha is True
-        assert config.stealth_mode is True
+        assert config.use_proxy is False  # Default to False for hobby plan compatibility
+        assert config.solve_captcha is False  # Default to False for hobby plan compatibility
+        assert config.stealth_mode is False  # Default to False for hobby plan compatibility
         assert config.max_retries == 3
         
     def test_config_invalid_values(self):

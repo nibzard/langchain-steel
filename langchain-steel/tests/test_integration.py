@@ -354,8 +354,7 @@ class TestDataFlow:
         """Test configuration data flow between components."""
         config = SteelConfig(
             api_key="flow-test-key",
-            session_timeout=240,
-            custom_field="test_value"
+            session_timeout=240
         )
         
         with patch('langchain_steel.utils.client.SteelClient'):
