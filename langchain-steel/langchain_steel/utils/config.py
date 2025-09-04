@@ -36,6 +36,7 @@ class SteelConfig:
     
     Attributes:
         api_key: Steel API key for authentication
+        anthropic_api_key: Anthropic API key for Claude Computer Use
         base_url: Steel API base URL (default: Steel Cloud)
         default_format: Default output format for content extraction
         session_timeout: Default session timeout in seconds
@@ -53,6 +54,7 @@ class SteelConfig:
     
     # Authentication
     api_key: str = field(default_factory=lambda: os.getenv("STEEL_API_KEY", ""))
+    anthropic_api_key: str = field(default_factory=lambda: os.getenv("ANTHROPIC_API_KEY", ""))
     base_url: str = "https://api.steel.dev"
     
     # Default behavior
@@ -106,6 +108,16 @@ class SteelConfig:
         if self.retry_delay < 0:
             raise SteelConfigError("Retry delay cannot be negative.")
     
+    def validate_browser_agent_config(self) -> None:
+        """Validate configuration specifically for browser agent usage."""
+        self._validate_config()  # Run base validation first
+        
+        if not self.anthropic_api_key:
+            raise SteelConfigError(
+                "Anthropic API key is required for browser agent. Set ANTHROPIC_API_KEY environment variable "
+                "or provide anthropic_api_key parameter."
+            )
+    
     @classmethod
     def from_env(cls, **kwargs: Any) -> "SteelConfig":
         """Create configuration from environment variables.
@@ -129,6 +141,7 @@ class SteelConfig:
         """
         env_config = {
             "api_key": os.getenv("STEEL_API_KEY", ""),
+            "anthropic_api_key": os.getenv("ANTHROPIC_API_KEY", ""),
             "base_url": os.getenv("STEEL_BASE_URL", "https://api.steel.dev"),
             "use_proxy": os.getenv("STEEL_USE_PROXY", "false").lower() == "true",
             "solve_captcha": os.getenv("STEEL_SOLVE_CAPTCHA", "false").lower() == "true",

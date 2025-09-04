@@ -2,6 +2,8 @@
 ABOUTME: Provides high-level browser automation using Steel's cloud infrastructure."""
 
 import logging
+import os
+import asyncio
 from typing import Any, Dict, Optional, Union, Type
 import json
 
@@ -10,6 +12,9 @@ from pydantic import BaseModel, Field
 
 from langchain_steel.tools.base import BaseSteelTool
 from langchain_steel.utils.errors import SteelError
+from langchain_steel.agents.claude_computer_use import (
+    create_browser_automation_agent
+)
 
 logger = logging.getLogger(__name__)
 
@@ -201,14 +206,14 @@ class SteelBrowserAgent(BaseSteelTool):
         return_format: str,
         run_manager: Optional[CallbackManagerForToolRun] = None,
     ) -> str:
-        """Execute browser automation task synchronously.
+        """Execute browser automation task using Claude Computer Use.
         
-        This method integrates with Steel's session API to perform browser automation.
-        It creates or reuses browser sessions and executes the natural language task.
+        This method uses Claude's computer use capabilities with Steel's browser
+        infrastructure to perform complex browser automation tasks.
         
         Args:
             task: Natural language task description
-            session_id: Optional existing session ID
+            session_id: Optional existing session ID (ignored for now)
             max_steps: Maximum interaction steps
             session_options: Session configuration
             return_format: Output format
@@ -217,75 +222,97 @@ class SteelBrowserAgent(BaseSteelTool):
         Returns:
             Formatted task results
         """
-        # Create or reuse session
-        if session_id:
-            # Try to reuse existing session
-            session = self._get_existing_session(session_id)
-            if not session:
-                raise SteelError(f"Session {session_id} not found or expired")
-        else:
-            # Create new session with options
-            if run_manager:
-                run_manager.on_text(f"Debug - session_options: {session_options}\n")
-            
-            try:
-                session = self.client.create_session(
-                    reuse_existing=self.session_reuse,
-                    **session_options
-                )
-                session_id = session.id
-            except Exception as e:
-                if run_manager:
-                    run_manager.on_text(f"Debug - session creation failed with options: {session_options}\n")
-                raise e
+        # Validate browser agent configuration
+        self.config.validate_browser_agent_config()
+        anthropic_api_key = self.config.anthropic_api_key
+        
+        # Prepare session options with defaults
+        session_config = {
+            "use_proxy": session_options.get("use_proxy", False),
+            "solve_captcha": session_options.get("solve_captcha", False),
+            "session_timeout": session_options.get("session_timeout", 900000),
+            "width": session_options.get("width", 1024),
+            "height": session_options.get("height", 768),
+        }
+        
+        if run_manager:
+            run_manager.on_text(f"Starting Claude Computer Use browser automation\n")
+            run_manager.on_text(f"Task: {task}\n")
+            run_manager.on_text(f"Max steps: {max_steps}\n")
         
         try:
-            # Execute browser automation through Steel API
-            # Note: This would integrate with Steel's browser automation API
-            # For now, we'll simulate the response structure
+            # Check if we're in an async context and handle appropriately
+            try:
+                # Try to get the running event loop
+                loop = asyncio.get_running_loop()
+                # We're in an event loop, run synchronously but await the async task
+                import concurrent.futures
+                import threading
+                
+                # Create a new thread with its own event loop for the async task
+                def run_in_thread():
+                    return asyncio.run(self._execute_async_browser_task(
+                        task, anthropic_api_key, session_config, max_steps, run_manager
+                    ))
+                
+                with concurrent.futures.ThreadPoolExecutor() as executor:
+                    future = executor.submit(run_in_thread)
+                    result = future.result()
+                    
+            except RuntimeError:
+                # No event loop running, we can use asyncio.run() directly
+                result = asyncio.run(self._execute_async_browser_task(
+                    task, anthropic_api_key, session_config, max_steps, run_manager
+                ))
             
             if run_manager:
-                run_manager.on_text(f"Using session: {session_id}\n")
-                run_manager.on_text(f"Executing task with max {max_steps} steps...\n")
+                run_manager.on_text(f"Task completed after {result['iterations']} iterations\n")
             
-            # Prepare task execution parameters
-            execution_params = {
-                "task": task,
-                "session_id": session_id,
-                "max_steps": max_steps,
-                "return_screenshots": True,
-                "return_metadata": True,
-            }
+            # Format the result
+            formatted_result = self._format_claude_result(result, return_format)
             
-            # Execute the task through Steel's browser automation
-            # This would call Steel's actual browser automation API
-            raw_result = self._call_steel_browser_automation(execution_params)
-            
-            # Format the result based on requested format
-            formatted_result = self._format_browser_result(raw_result, return_format)
-            
-            # Add session information for potential reuse
-            if isinstance(formatted_result, str) and return_format in ["json", "structured"]:
-                try:
-                    result_dict = json.loads(formatted_result)
-                    result_dict["session_id"] = session_id
-                    formatted_result = json.dumps(result_dict, indent=2)
-                except (json.JSONDecodeError, TypeError):
-                    # If not JSON, append session info
-                    formatted_result += f"\n\nSession ID (for reuse): {session_id}"
-            else:
-                formatted_result += f"\n\nSession ID (for reuse): {session_id}"
+            # Add session information
+            if "session_url" in result:
+                session_info = f"\n\nSession URL: {result['session_url']}"
+                formatted_result += session_info
             
             return formatted_result
-        
+                
         except Exception as e:
-            # Release session on error if we created it
-            if not session_id:
-                try:
-                    self.client.release_session(session.id)
-                except Exception:
-                    pass  # Ignore cleanup errors
-            raise e
+            error_msg = f"Browser automation failed: {str(e)}"
+            logger.error(error_msg)
+            if run_manager:
+                run_manager.on_text(f"Error: {error_msg}\n")
+            raise SteelError(error_msg, original_error=e)
+    
+    async def _execute_async_browser_task(
+        self,
+        task: str,
+        anthropic_api_key: str,
+        session_config: Dict[str, Any],
+        max_steps: int,
+        run_manager: Optional[CallbackManagerForToolRun] = None,
+    ) -> Dict[str, Any]:
+        """Execute browser automation task using async factory function."""
+        
+        if run_manager:
+            run_manager.on_text(f"Creating async browser automation session\n")
+        
+        # Use the async factory function
+        result = await create_browser_automation_agent(
+            steel_client=self.client._client,  # Get the Steel SDK client
+            anthropic_api_key=anthropic_api_key,
+            task=task,
+            max_iterations=max_steps,
+            width=session_config["width"],
+            height=session_config["height"],
+            use_proxy=session_config["use_proxy"],
+            solve_captcha=session_config["solve_captcha"],
+            session_timeout=session_config["session_timeout"],
+            model="claude-3-5-sonnet-20241022"
+        )
+        
+        return result
     
     async def _execute_browser_task_async(
         self,
@@ -296,298 +323,108 @@ class SteelBrowserAgent(BaseSteelTool):
         return_format: str,
         run_manager: Optional[AsyncCallbackManagerForToolRun] = None,
     ) -> str:
-        """Execute browser automation task asynchronously."""
-        # Create or reuse session
-        if session_id:
-            session = await self._get_existing_session_async(session_id)
-            if not session:
-                raise SteelError(f"Session {session_id} not found or expired")
-        else:
-            session = await self.async_client.create_session(
-                reuse_existing=self.session_reuse,
-                **session_options
-            )
-            session_id = session.id
+        """Execute browser automation task asynchronously using Claude Computer Use."""
         
-        try:
-            if run_manager:
-                await run_manager.on_text(f"Using session: {session_id}\n")
-                await run_manager.on_text(f"Executing task with max {max_steps} steps...\n")
-            
-            # Execute async browser automation
-            execution_params = {
-                "task": task,
-                "session_id": session_id,
-                "max_steps": max_steps,
-                "return_screenshots": True,
-                "return_metadata": True,
-            }
-            
-            raw_result = await self._call_steel_browser_automation_async(execution_params)
-            formatted_result = self._format_browser_result(raw_result, return_format)
-            
-            # Add session information
-            if isinstance(formatted_result, str) and return_format in ["json", "structured"]:
-                try:
-                    result_dict = json.loads(formatted_result)
-                    result_dict["session_id"] = session_id
-                    formatted_result = json.dumps(result_dict, indent=2)
-                except (json.JSONDecodeError, TypeError):
-                    formatted_result += f"\n\nSession ID (for reuse): {session_id}"
-            else:
-                formatted_result += f"\n\nSession ID (for reuse): {session_id}"
-            
-            return formatted_result
+        # Validate browser agent configuration
+        self.config.validate_browser_agent_config()
+        anthropic_api_key = self.config.anthropic_api_key
         
-        except Exception as e:
-            if not session_id:
-                try:
-                    await self.async_client.release_session(session.id)
-                except Exception:
-                    pass
-            raise e
-    
-    def _call_steel_browser_automation(self, params: Dict[str, Any]) -> Dict[str, Any]:
-        """Call Steel's browser automation API using the scraper as fallback.
-        
-        Since Steel doesn't have a direct "browser agent" API, we'll use the
-        SteelScrapeTool to perform the automation task on the target website.
-        
-        Args:
-            params: Execution parameters
-            
-        Returns:
-            Raw automation results
-        """
-        from langchain_steel import SteelScrapeTool
-        
-        task = params["task"]
-        session_id = params.get("session_id")  # Extract but don't pass to scraper
-        
-        try:
-            # For now, we'll use Steel's scraping capabilities to fulfill the automation task
-            # This is a simplified implementation - in a full version you'd parse the task
-            # and determine the appropriate URL and extraction logic
-            
-            # Determine target URL from task
-            target_url = self._extract_url_from_task(task)
-            
-            # Use SteelScrapeTool to get the content
-            # Note: SteelScrapeTool doesn't accept session_id parameter
-            scraper = SteelScrapeTool()
-            
-            # Get the content from the target URL
-            scraped_content = scraper._run(
-                url=target_url,
-                format="markdown",
-                wait_for_selector=None,
-                delay_ms=2000  # Wait 2 seconds for content to load
-            )
-            
-            # Process the content based on the task requirements
-            processed_result = self._process_scraped_content(task, scraped_content)
-            
-            return {
-                "success": True,
-                "task": task,
-                "session_id": session_id,
-                "steps_executed": 2,  # URL navigation + content extraction
-                "result": processed_result,
-                "extracted_data": {"content": scraped_content},
-                "screenshots": [],
-                "final_url": target_url,
-                "execution_time": 5.0,
-                "metadata": {
-                    "method": "steel_scraping",
-                    "url": target_url,
-                    "content_length": len(scraped_content)
-                }
-            }
-            
-        except Exception as e:
-            return {
-                "success": False,
-                "task": task,
-                "session_id": session_id,
-                "error": str(e),
-                "result": f"Failed to execute task: {str(e)}"
-            }
-    
-    def _extract_url_from_task(self, task: str) -> str:
-        """Extract target URL from natural language task.
-        
-        Args:
-            task: Natural language task description
-            
-        Returns:
-            URL to navigate to
-        """
-        task_lower = task.lower()
-        
-        # Common website mappings
-        url_mappings = {
-            "hacker news": "https://news.ycombinator.com",
-            "hn": "https://news.ycombinator.com", 
-            "github": "https://github.com",
-            "reddit": "https://reddit.com",
-            "stack overflow": "https://stackoverflow.com",
-            "wikipedia": "https://en.wikipedia.org",
-            "google": "https://www.google.com",
-            "youtube": "https://www.youtube.com",
-            "twitter": "https://twitter.com",
-            "linkedin": "https://www.linkedin.com"
+        # Prepare session options with defaults
+        session_config = {
+            "use_proxy": session_options.get("use_proxy", False),
+            "solve_captcha": session_options.get("solve_captcha", False),
+            "session_timeout": session_options.get("session_timeout", 900000),
+            "width": session_options.get("width", 1024),
+            "height": session_options.get("height", 768),
         }
         
-        # Look for URL patterns first
-        import re
-        url_pattern = r'https?://[^\s]+'
-        urls = re.findall(url_pattern, task)
-        if urls:
-            return urls[0]
-        
-        # Look for website names
-        for site_name, url in url_mappings.items():
-            if site_name in task_lower:
-                return url
-        
-        # Default fallback
-        return "https://example.com"
-    
-    def _process_scraped_content(self, task: str, content: str) -> str:
-        """Process scraped content based on the task requirements.
-        
-        Args:
-            task: Original task description
-            content: Scraped content from the website
-            
-        Returns:
-            Processed result based on task requirements
-        """
-        task_lower = task.lower()
-        
-        # For Hacker News specifically
-        if "hacker news" in task_lower or "hn" in task_lower:
-            return self._process_hackernews_content(task, content)
-        
-        # For general tasks, return a summary
-        lines = content.split('\n')
-        content_lines = [line.strip() for line in lines if line.strip()]
-        
-        if len(content_lines) > 20:
-            summary = "Website Content Summary:\n\n"
-            summary += "\n".join(content_lines[:20])
-            summary += f"\n\n... (showing first 20 lines of {len(content_lines)} total lines)"
-            return summary
-        else:
-            return f"Website Content:\n\n{content}"
-    
-    def _process_hackernews_content(self, task: str, content: str) -> str:
-        """Process Hacker News content to extract post information.
-        
-        Args:
-            task: Original task description
-            content: Scraped Hacker News content
-            
-        Returns:
-            Formatted post information
-        """
-        lines = content.split('\n')
-        
-        # Simple extraction logic for Hacker News posts
-        # This is a basic implementation - in practice you'd use more sophisticated parsing
-        posts = []
-        current_post = {}
-        
-        for line in lines:
-            line = line.strip()
-            if not line:
-                continue
-                
-            # Look for post titles (usually contain links)
-            if line.startswith('[') and '](' in line:
-                if current_post:
-                    posts.append(current_post)
-                current_post = {"title": line}
-            
-            # Look for points and comments patterns
-            elif "points" in line.lower() or "point" in line.lower():
-                current_post["points"] = line
-            elif "comments" in line.lower() or "comment" in line.lower():
-                current_post["comments"] = line
-        
-        # Add the last post
-        if current_post:
-            posts.append(current_post)
-        
-        # Format the results
-        if posts:
-            result = "Top Hacker News Posts:\n\n"
-            for i, post in enumerate(posts[:5], 1):
-                result += f"{i}. {post.get('title', 'No title')}\n"
-                if 'points' in post:
-                    result += f"   {post['points']}\n"
-                if 'comments' in post:
-                    result += f"   {post['comments']}\n"
-                result += "\n"
-            return result
-        else:
-            # Fallback - return first part of content
-            return f"Hacker News Content (first 1000 chars):\n\n{content[:1000]}..."
-    
-    async def _call_steel_browser_automation_async(self, params: Dict[str, Any]) -> Dict[str, Any]:
-        """Call Steel's browser automation API asynchronously."""
-        from langchain_steel import SteelScrapeTool
-        
-        task = params["task"]
-        session_id = params["session_id"]
+        if run_manager:
+            await run_manager.on_text(f"Starting Claude Computer Use browser automation (async)\n")
+            await run_manager.on_text(f"Task: {task}\n")
+            await run_manager.on_text(f"Max steps: {max_steps}\n")
         
         try:
-            # Use async scraping for better performance
-            target_url = self._extract_url_from_task(task)
-            scraper = SteelScrapeTool()
+            # Use the async factory function directly
+            result = await create_browser_automation_agent(
+                steel_client=self.client._client,  # Get the Steel SDK client
+                anthropic_api_key=anthropic_api_key,
+                task=task,
+                max_iterations=max_steps,
+                width=session_config["width"],
+                height=session_config["height"],
+                use_proxy=session_config["use_proxy"],
+                solve_captcha=session_config["solve_captcha"],
+                session_timeout=session_config["session_timeout"],
+                model="claude-3-5-sonnet-20241022"
+            )
             
-            # Use async version if available, otherwise fallback to sync
-            if hasattr(scraper, '_arun'):
-                scraped_content = await scraper._arun(
-                    url=target_url,
-                    format="markdown", 
-                    delay_ms=2000
-                )
-            else:
-                # Fallback to sync version
-                scraped_content = scraper._run(
-                    url=target_url,
-                    format="markdown",
-                    delay_ms=2000
-                )
+            if run_manager:
+                await run_manager.on_text(f"Task completed after {result['iterations']} iterations\n")
             
-            processed_result = self._process_scraped_content(task, scraped_content)
+            # Format the result
+            formatted_result = self._format_claude_result(result, return_format)
             
-            return {
-                "success": True,
-                "task": task,
-                "session_id": session_id,
-                "steps_executed": 2,
-                "result": processed_result,
-                "extracted_data": {"content": scraped_content},
-                "screenshots": [],
-                "final_url": target_url,
-                "execution_time": 5.0,
-                "metadata": {
-                    "method": "steel_scraping_async",
-                    "url": target_url,
-                    "content_length": len(scraped_content)
-                }
-            }
+            # Add session information
+            if "session_url" in result:
+                session_info = f"\n\nSession URL: {result['session_url']}"
+                formatted_result += session_info
             
+            return formatted_result
+                
         except Exception as e:
-            return {
-                "success": False,
-                "task": task,
-                "session_id": session_id,
-                "error": str(e),
-                "result": f"Failed to execute task: {str(e)}"
+            error_msg = f"Browser automation failed: {str(e)}"
+            logger.error(error_msg)
+            if run_manager:
+                await run_manager.on_text(f"Error: {error_msg}\n")
+            raise SteelError(error_msg, original_error=e)
+    
+    def _format_claude_result(self, result: Dict[str, Any], format_type: str) -> str:
+        """Format Claude Computer Use result based on requested format.
+        
+        Args:
+            result: Result from Claude Computer Use execution
+            format_type: Desired output format
+            
+        Returns:
+            Formatted result string
+        """
+        if format_type == "json":
+            return json.dumps(result, indent=2)
+        
+        elif format_type == "structured":
+            structured = {
+                "task_completed": result.get("success", False),
+                "iterations_executed": result.get("iterations", 0),
+                "result_summary": result.get("result", ""),
+                "final_url": result.get("final_url", ""),
+                "method": "claude_computer_use",
             }
+            return json.dumps(structured, indent=2)
+        
+        else:  # text format (default)
+            result_parts = []
+            
+            if result.get("success"):
+                result_parts.append("✅ Task completed successfully")
+            else:
+                result_parts.append("❌ Task failed")
+            
+            if "result" in result:
+                result_parts.append(f"\nResult: {result['result']}")
+            
+            if "iterations" in result:
+                result_parts.append(f"Iterations: {result['iterations']}")
+            
+            if "final_url" in result:
+                result_parts.append(f"Final URL: {result['final_url']}")
+            
+            result_parts.append(f"Method: Claude Computer Use")
+            
+            return "\n".join(result_parts)
+    
+    
+    
+    
     
     def _format_browser_result(self, raw_result: Dict[str, Any], format_type: str) -> str:
         """Format browser automation results.
@@ -638,13 +475,3 @@ class SteelBrowserAgent(BaseSteelTool):
             
             return "\n".join(result_parts)
     
-    def _get_existing_session(self, session_id: str):
-        """Get existing session by ID."""
-        # TODO: Implement session retrieval logic
-        # This would check if the session exists and is still active
-        return None
-    
-    async def _get_existing_session_async(self, session_id: str):
-        """Get existing session by ID asynchronously."""
-        # TODO: Implement async session retrieval logic
-        return None
