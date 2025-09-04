@@ -25,24 +25,49 @@ TOOL_CONFIG = {
 # Key mappings for Claude Computer Use to Playwright
 KEY_MAPPINGS = {
     "Return": "Enter",
-    "space": " ",
-    "cmd": "Meta",
-    "ctrl": "Control",
-    "alt": "Alt",
-    "shift": "Shift",
-    "tab": "Tab",
-    "escape": "Escape",
-    "backspace": "Backspace",
-    "delete": "Delete",
+    "return": "Enter",
+    "Enter": "Enter",
     "enter": "Enter",
+    "space": " ",
+    "Space": " ",
+    "cmd": "Meta",
+    "Cmd": "Meta",
+    "ctrl": "Control",
+    "Ctrl": "Control",
+    "Control": "Control",
+    "alt": "Alt",
+    "Alt": "Alt",
+    "shift": "Shift",
+    "Shift": "Shift",
+    "tab": "Tab",
+    "Tab": "Tab",
+    "escape": "Escape",
+    "Escape": "Escape",
+    "esc": "Escape",
+    "backspace": "Backspace",
+    "Backspace": "Backspace",
+    "delete": "Delete",
+    "Delete": "Delete",
     "arrowup": "ArrowUp",
+    "ArrowUp": "ArrowUp",
     "arrowdown": "ArrowDown",
+    "ArrowDown": "ArrowDown",
     "arrowleft": "ArrowLeft",
+    "ArrowLeft": "ArrowLeft",
     "arrowright": "ArrowRight",
+    "ArrowRight": "ArrowRight",
     "pageup": "PageUp",
+    "PageUp": "PageUp",
     "pagedown": "PageDown",
+    "PageDown": "PageDown",
     "home": "Home",
+    "Home": "Home",
     "end": "End",
+    "End": "End",
+    "up": "ArrowUp",
+    "down": "ArrowDown",
+    "left": "ArrowLeft",
+    "right": "ArrowRight",
 }
 
 # System prompt for Claude Computer Use
@@ -185,8 +210,26 @@ class SteelBrowser:
             await self.page.keyboard.type(text, delay=12)
         
         elif action == "key" and text:
-            key_to_press = KEY_MAPPINGS.get(text.lower(), text)
-            await self.page.keyboard.press(key_to_press)
+            # Handle key combinations like "ctrl+l" or "cmd+t"
+            if "+" in text:
+                key_parts = text.split("+")
+                modifier_keys = [KEY_MAPPINGS.get(k.strip(), k.strip()) for k in key_parts[:-1]]
+                main_key = KEY_MAPPINGS.get(key_parts[-1].strip(), key_parts[-1].strip())
+                
+                # Press modifiers
+                for mod in modifier_keys:
+                    await self.page.keyboard.down(mod)
+                
+                # Press main key
+                await self.page.keyboard.press(main_key)
+                
+                # Release modifiers
+                for mod in reversed(modifier_keys):
+                    await self.page.keyboard.up(mod)
+            else:
+                # Single key press
+                key_to_press = KEY_MAPPINGS.get(text.strip(), text.strip())
+                await self.page.keyboard.press(key_to_press)
         
         # Handle scroll
         elif action == "scroll":
@@ -414,7 +457,7 @@ async def run_browser_task(
     """
     
     # Initialize Steel client
-    steel_client = Steel(api_key=steel_api_key)
+    steel_client = Steel(steel_api_key=steel_api_key)
     
     # Create browser session
     async with SteelBrowser(

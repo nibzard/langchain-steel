@@ -1,6 +1,6 @@
 # Steel Browser Agent Tools
 
-[Steel.dev](https://steel.dev) provides advanced browser automation tools that enable AI agents to perform complex, multi-step web interactions. These tools go beyond simple scraping to enable interactive workflows, form filling, navigation, and authenticated sessions.
+[Steel.dev](https://steel.dev) provides advanced browser automation tools that enable AI agents to perform complex, multi-step web interactions using Claude Computer Use capabilities.
 
 ## Installation
 
@@ -10,85 +10,57 @@ pip install langchain-steel
 
 Get your API key from [steel.dev](https://steel.dev) and set it:
 
-```python
-import os
-os.environ["STEEL_API_KEY"] = "your-api-key"
-```
-
-## Steel Plan Compatibility
-
-Steel offers different plan tiers with varying feature availability. The LangChain-Steel integration is configured to work with all plan levels by using sensible defaults.
-
-### Hobby Plan (Free/Entry Level)
-- ✅ Basic browser automation
-- ❌ CAPTCHA solving (requires plan upgrade)
-- ❌ Stealth browsing features (requires plan upgrade)
-- ❌ Proxy usage (requires plan upgrade)
-
-### Professional/Enterprise Plans
-- ✅ All hobby plan features
-- ✅ Automatic CAPTCHA solving
-- ✅ Advanced stealth browsing features
-- ✅ Proxy rotation and geographic targeting
-- ✅ Higher rate limits and concurrent sessions
-- ✅ Advanced session persistence
-
-### Default Configuration
-
-The integration defaults to **hobby plan compatible settings**:
-- `use_proxy=False` - Avoids proxy-related errors on hobby plans
-- `solve_captcha=False` - Disabled for hobby plan compatibility
-- `stealth_mode=False` - Disabled for hobby plan compatibility
-
-### Enabling Advanced Features
-
-If you have a Professional or Enterprise plan, you can enable advanced features:
-
-**Option 1: Environment Variables**
 ```bash
-export STEEL_USE_PROXY=true
-export STEEL_SOLVE_CAPTCHA=true
-export STEEL_STEALTH_MODE=true
+# .env file
+STEEL_API_KEY=your-steel-api-key
+ANTHROPIC_API_KEY=your-anthropic-api-key
 ```
 
-**Option 2: Configuration Object**
-```python
-from langchain_steel import SteelBrowserAgent, SteelConfig
+## Quick Start
 
-config = SteelConfig(
-    use_proxy=True,
-    solve_captcha=True,
-    stealth_mode=True
+### Simple Direct Usage
+
+```python
+from langchain_steel.agents.computer_use import run_browser_task
+import os
+
+# Direct function call
+result = await run_browser_task(
+    steel_api_key=os.getenv("STEEL_API_KEY"),
+    anthropic_api_key=os.getenv("ANTHROPIC_API_KEY"),
+    task="Go to Hacker News and get the top 5 posts",
+    max_steps=20
 )
-agent = SteelBrowserAgent(config=config)
+
+print(f"Success: {result['success']}")
+print(f"Result: {result['result']}")
+print(f"Session replay: {result['session_url']}")
 ```
 
-**Option 3: Session Options**
-```python
-result = agent.run({
-    "task": "Your automation task here",
-    "session_options": {
-        "use_proxy": True,
-        "solve_captcha": True,
-        "block_ads": True,  # Part of stealth features
-        "region": "us"  # Proxy region
-    }
-})
-```
-
-## Available Tools
-
-### SteelBrowserAgent
-
-High-level browser automation with natural language task descriptions.
+### LangChain Integration
 
 ```python
 from langchain_steel import SteelBrowserAgent
 
+# Initialize agent
 agent = SteelBrowserAgent()
 
-# Complex multi-step automation
-result = agent.run("""
+# Natural language automation
+result = agent.run({
+    "task": "Go to GitHub trending and get the top 3 Python repositories",
+    "max_steps": 25
+})
+
+print(result)
+```
+
+## Core Features
+
+### 🤖 Natural Language Automation
+Use plain English to describe complex browser tasks:
+
+```python
+task = """
 1. Navigate to GitHub.com
 2. Search for 'langchain' repositories
 3. Sort results by stars (descending)  
@@ -96,575 +68,481 @@ result = agent.run("""
    - Repository name and description
    - Star count and primary language
    - Last update date
-5. Return as structured JSON
-""")
+5. Return as structured information
+"""
 
-print(result)
+result = await run_browser_task(
+    steel_api_key="your-key",
+    anthropic_api_key="your-key",
+    task=task
+)
 ```
 
-### SteelNavigateTool
+### ⚡ Clean Architecture
+The refactored implementation uses a clean, simple architecture:
 
-Programmatic page navigation and interaction.
+- **SteelBrowser**: Manages browser sessions and actions
+- **ClaudeAgent**: Handles Claude Computer Use integration
+- **run_browser_task()**: Main entry point for direct usage
+- **SteelBrowserAgent**: LangChain tool wrapper
+
+### 🔧 Advanced Configuration
 
 ```python
-from langchain_steel import SteelNavigateTool
-
-nav_tool = SteelNavigateTool()
-
-result = nav_tool.run({
-    "url": "https://example.com/search",
-    "actions": [
-        {"type": "fill_form", "selector": "input[name='q']", "value": "artificial intelligence"},
-        {"type": "click", "selector": "button[type='submit']"},
-        {"type": "wait_for", "selector": ".search-results"},
-        {"type": "scroll", "direction": "down", "pixels": 500}
-    ]
-})
+# Enable proxy and CAPTCHA solving
+result = await run_browser_task(
+    steel_api_key="your-key",
+    anthropic_api_key="your-key",
+    task="Navigate to a protected site and extract data",
+    max_steps=30,
+    use_proxy=True,      # Enable proxy rotation
+    solve_captcha=True   # Enable CAPTCHA solving
+)
 ```
 
-### SteelFormTool  
+## Steel Plan Compatibility
 
-Specialized form filling and submission.
+### Hobby Plan (Free/Entry Level)
+- ✅ Basic browser automation
+- ✅ Natural language task execution
+- ✅ Session replay URLs
+- ❌ CAPTCHA solving (requires upgrade)
+- ❌ Proxy usage (requires upgrade)
+
+### Professional/Enterprise Plans
+- ✅ All hobby plan features
+- ✅ Automatic CAPTCHA solving (`solve_captcha=True`)
+- ✅ Proxy rotation (`use_proxy=True`)
+- ✅ Higher rate limits and concurrent sessions
+
+## Usage Examples
+
+### Web Scraping
 
 ```python
-from langchain_steel import SteelFormTool
+# Extract data from a website
+task = "Go to example.com and tell me what the main heading says"
 
-form_tool = SteelFormTool()
-
-result = form_tool.run({
-    "url": "https://forms.example.com/contact",
-    "form_data": {
-        "name": "John Doe",
-        "email": "john@example.com",
-        "subject": "Product Inquiry",
-        "message": "I'm interested in your enterprise solutions."
-    },
-    "submit": True,
-    "wait_for_confirmation": True
-})
+result = await run_browser_task(
+    steel_api_key=os.getenv("STEEL_API_KEY"),
+    anthropic_api_key=os.getenv("ANTHROPIC_API_KEY"),
+    task=task,
+    max_steps=10
+)
 ```
 
-### SteelInteractionTool
-
-Low-level browser interactions (clicks, typing, scrolling).
+### Form Interaction
 
 ```python
-from langchain_steel import SteelInteractionTool
+# Fill and submit forms
+task = """
+1. Go to httpbin.org/forms/post
+2. Fill the customer name field with 'Test User'
+3. Fill the telephone field with '555-1234' 
+4. Fill the email field with 'test@example.com'
+5. Tell me what fields are available on the form
+"""
 
-interaction_tool = SteelInteractionTool()
-
-result = interaction_tool.run({
-    "url": "https://dashboard.example.com",
-    "interactions": [
-        {"action": "click", "selector": ".menu-toggle"},
-        {"action": "type", "selector": "#search-input", "text": "quarterly report"},
-        {"action": "key_press", "key": "Enter"},
-        {"action": "wait", "milliseconds": 3000},
-        {"action": "screenshot"}
-    ]
-})
+result = await run_browser_task(
+    steel_api_key="your-key",
+    anthropic_api_key="your-key",
+    task=task,
+    max_steps=20
+)
 ```
 
-## Agent Integration
+### Search and Data Extraction
 
-### Single Agent Workflow
+```python
+# Complex search task
+task = """
+1. Go to DuckDuckGo
+2. Search for 'LangChain tutorial'
+3. Get the titles and URLs of the first 3 search results
+4. Return the information in a structured format
+"""
+
+result = await run_browser_task(
+    steel_api_key="your-key",
+    anthropic_api_key="your-key", 
+    task=task,
+    max_steps=25
+)
+```
+
+## LangChain Agent Integration
+
+### Single Agent Setup
 
 ```python
 from langchain_steel import SteelBrowserAgent
 from langchain.agents import initialize_agent, AgentType
-from langchain_openai import OpenAI
+from langchain_anthropic import ChatAnthropic
 
+# Initialize tools
 browser_agent = SteelBrowserAgent()
 
+# Create agent
 agent = initialize_agent(
     tools=[browser_agent],
-    llm=OpenAI(temperature=0),
+    llm=ChatAnthropic(model="claude-3-sonnet-20240229"),
     agent=AgentType.ZERO_SHOT_REACT_DESCRIPTION,
     verbose=True
 )
 
+# Execute complex task
 result = agent.run("""
-Go to LinkedIn, search for AI engineers in San Francisco,
-and get contact information for the first 5 profiles.
-Handle any login requirements automatically.
+Research the top 3 AI companies by analyzing their websites 
+and extract key information about their products and services.
 """)
 ```
 
-### Multi-Tool Automation
+### Async Usage
 
 ```python
-from langchain_steel import (
-    SteelBrowserAgent, 
-    SteelNavigateTool, 
-    SteelFormTool,
-    SteelInteractionTool
+from langchain_steel import SteelBrowserAgent
+
+agent = SteelBrowserAgent()
+
+# Async execution
+result = await agent._arun(
+    task="Go to GitHub trending and get repository information",
+    max_steps=20,
+    use_proxy=False,
+    solve_captcha=False
 )
-
-tools = [
-    SteelBrowserAgent(name="browser_automator"),
-    SteelNavigateTool(name="navigator"), 
-    SteelFormTool(name="form_filler"),
-    SteelInteractionTool(name="interactor")
-]
-
-agent = initialize_agent(
-    tools=tools,
-    llm=OpenAI(temperature=0),
-    agent=AgentType.ZERO_SHOT_REACT_DESCRIPTION
-)
-
-# Complex e-commerce workflow
-result = agent.run("""
-1. Navigate to the online store
-2. Search for wireless headphones under $200
-3. Filter by customer rating > 4 stars
-4. Add the top-rated item to cart
-5. Fill in shipping information
-6. Capture order summary before checkout
-""")
 ```
 
 ## Advanced Use Cases
 
-### E-commerce Automation
+### E-commerce Price Monitoring
 
 ```python
-class EcommerceBot:
-    def __init__(self):
-        self.browser_agent = SteelBrowserAgent()
-        self.form_tool = SteelFormTool()
-        self.nav_tool = SteelNavigateTool()
+async def monitor_product_price(product_url: str, target_price: float):
+    """Monitor product price and get alerts."""
     
-    def monitor_product_price(self, product_url: str, target_price: float):
-        """Monitor product and purchase if price drops below target."""
-        
-        task = f"""
-        1. Go to {product_url}
-        2. Extract current price and availability
-        3. If price <= ${target_price} and in stock:
-           - Add to cart
-           - Proceed to checkout
-           - Stop before payment confirmation
-        4. Return price monitoring report
-        """
-        
-        result = self.browser_agent.run(task)
-        return result
-    
-    def compare_products(self, search_term: str, max_price: float):
-        """Compare products across multiple retailers."""
-        
-        retailers = [
-            "https://amazon.com",
-            "https://bestbuy.com", 
-            "https://target.com"
-        ]
-        
-        comparisons = []
-        
-        for retailer in retailers:
-            task = f"""
-            1. Go to {retailer}
-            2. Search for '{search_term}'
-            3. Filter by price under ${max_price}
-            4. Get top 3 results with:
-               - Product name and price
-               - Customer rating
-               - Availability status
-            5. Return structured product data
-            """
-            
-            result = self.browser_agent.run(task)
-            comparisons.append({
-                "retailer": retailer,
-                "products": result
-            })
-        
-        return comparisons
-
-# Usage
-bot = EcommerceBot()
-comparison = bot.compare_products("wireless mouse", 50.0)
-```
-
-### Social Media Automation
-
-```python
-def automate_social_research(topic: str, platforms: list):
-    """Research topic across multiple social platforms."""
-    
-    browser_agent = SteelBrowserAgent()
-    results = {}
-    
-    for platform in platforms:
-        if platform == "twitter":
-            task = f"""
-            1. Go to twitter.com/search
-            2. Search for '{topic}' 
-            3. Filter by 'Latest' tweets
-            4. Collect first 20 tweets with:
-               - Tweet content
-               - Author handle
-               - Engagement metrics
-               - Timestamp
-            5. Return as structured data
-            """
-            
-        elif platform == "reddit":
-            task = f"""
-            1. Go to reddit.com/search
-            2. Search for '{topic}'
-            3. Sort by 'Hot' posts
-            4. Get top 10 posts with:
-               - Title and content
-               - Upvotes and comments count
-               - Subreddit name
-            5. Return structured post data
-            """
-        
-        elif platform == "linkedin":
-            task = f"""
-            1. Go to linkedin.com
-            2. Search for '{topic}' in posts
-            3. Get top 15 professional posts with:
-               - Post content
-               - Author name and title
-               - Company information
-               - Engagement metrics
-            4. Return structured data
-            """
-        
-        results[platform] = browser_agent.run(task)
-    
-    return results
-
-# Research AI trends across platforms
-research = automate_social_research(
-    "artificial intelligence trends 2024",
-    ["twitter", "reddit", "linkedin"]
-)
-```
-
-### Lead Generation Automation
-
-```python
-class LeadGenerationBot:
-    def __init__(self):
-        self.browser_agent = SteelBrowserAgent()
-        self.form_tool = SteelFormTool()
-    
-    def find_company_contacts(self, company_name: str, role: str):
-        """Find contact information for specific roles at companies."""
-        
-        # Search on LinkedIn
-        linkedin_task = f"""
-        1. Go to LinkedIn
-        2. Use advanced search to find people at '{company_name}'
-        3. Filter by role containing '{role}'
-        4. Extract from first 10 results:
-           - Full name and title
-           - Company department
-           - Location
-           - Profile URL
-           - Mutual connections count
-        5. Return structured contact data
-        """
-        
-        linkedin_results = self.browser_agent.run(linkedin_task)
-        
-        # Verify on company website
-        company_task = f"""
-        1. Search Google for '{company_name} team' OR '{company_name} about us'
-        2. Visit company website team/about pages
-        3. Cross-reference names from LinkedIn results
-        4. Extract additional contact information:
-           - Official email patterns
-           - Direct phone numbers
-           - Team structure
-        5. Return verified contact details
-        """
-        
-        company_results = self.browser_agent.run(company_task)
-        
-        # Combine and deduplicate results
-        return {
-            "linkedin_data": linkedin_results,
-            "company_data": company_results,
-            "combined_leads": self._merge_contact_data(linkedin_results, company_results)
-        }
-    
-    def _merge_contact_data(self, linkedin_data, company_data):
-        """Merge and deduplicate contact information."""
-        # Implementation for combining data sources
-        pass
-
-# Generate leads for AI companies
-bot = LeadGenerationBot()
-contacts = bot.find_company_contacts("OpenAI", "Machine Learning Engineer")
-```
-
-## Session Management
-
-### Persistent Sessions
-
-```python
-from langchain_steel import SteelConfig, SteelBrowserAgent
-
-# Configure session persistence
-config = SteelConfig(
-    api_key="your-key",
-    session_timeout=1800,  # 30 minutes
-    use_proxy=True,
-    stealth_mode=True
-)
-
-agent = SteelBrowserAgent(config=config)
-
-# Maintain session across multiple tasks
-session_id = None
-
-# Task 1: Login
-login_result = agent.run(
-    task="Login to dashboard.example.com with saved credentials",
-    session_id=session_id
-)
-session_id = login_result.get("session_id")
-
-# Task 2: Navigate and extract data (reuse session)
-data_result = agent.run(
-    task="Navigate to reports section and download latest analytics",
-    session_id=session_id
-)
-
-# Task 3: Update settings (same session)
-update_result = agent.run(
-    task="Go to settings and update notification preferences",
-    session_id=session_id
-)
-```
-
-### Authentication Workflows
-
-```python
-def handle_oauth_flow(service: str, redirect_uri: str):
-    """Handle OAuth authentication flow."""
-    
-    agent = SteelBrowserAgent()
-    
-    oauth_task = f"""
-    1. Navigate to {service} OAuth authorization page
-    2. Click 'Authorize Application' button
-    3. Handle any 2FA prompts if they appear
-    4. Wait for redirect to {redirect_uri}
-    5. Extract authorization code from redirect URL
-    6. Return the authorization code and session cookies
+    task = f"""
+    1. Go to {product_url}
+    2. Extract the current price and product availability
+    3. Check if price is <= ${target_price}
+    4. Get product details: name, current price, rating, availability
+    5. Return structured price monitoring data
     """
     
-    result = agent.run(oauth_task)
+    result = await run_browser_task(
+        steel_api_key=os.getenv("STEEL_API_KEY"),
+        anthropic_api_key=os.getenv("ANTHROPIC_API_KEY"),
+        task=task,
+        max_steps=15
+    )
+    
     return result
 
-# Handle GitHub OAuth
-github_auth = handle_oauth_flow(
-    "https://github.com/login/oauth/authorize?client_id=your_client_id",
-    "https://yourapp.com/auth/callback"
+# Monitor a product
+price_data = await monitor_product_price(
+    "https://example-store.com/product/123", 
+    99.99
 )
 ```
 
-## Performance & Configuration
+### Social Media Research
+
+```python
+async def research_trending_topics(platform: str, topic: str):
+    """Research trending topics on social platforms."""
+    
+    if platform == "twitter":
+        task = f"""
+        1. Go to twitter.com/search
+        2. Search for '{topic}'
+        3. Get the first 10 recent tweets about this topic
+        4. Extract tweet content, author, and engagement metrics
+        5. Return structured data
+        """
+    elif platform == "reddit":
+        task = f"""
+        1. Go to reddit.com/search
+        2. Search for '{topic}'
+        3. Get top 10 posts with titles, upvotes, and comments
+        4. Return structured post data
+        """
+    
+    result = await run_browser_task(
+        steel_api_key=os.getenv("STEEL_API_KEY"),
+        anthropic_api_key=os.getenv("ANTHROPIC_API_KEY"),
+        task=task,
+        max_steps=25,
+        use_proxy=True  # Use proxy for social media
+    )
+    
+    return result
+
+# Research AI trends
+twitter_data = await research_trending_topics("twitter", "artificial intelligence")
+reddit_data = await research_trending_topics("reddit", "machine learning")
+```
+
+### Lead Generation
+
+```python
+async def find_company_contacts(company_name: str, role: str):
+    """Find contact information for specific roles at companies."""
+    
+    task = f"""
+    1. Go to LinkedIn
+    2. Search for people at '{company_name}' with role '{role}'
+    3. Get information from the first 5 results:
+       - Full name and title
+       - Company and department  
+       - Location
+       - Profile summary
+    4. Return structured contact data
+    """
+    
+    result = await run_browser_task(
+        steel_api_key=os.getenv("STEEL_API_KEY"),
+        anthropic_api_key=os.getenv("ANTHROPIC_API_KEY"),
+        task=task,
+        max_steps=30,
+        use_proxy=True,
+        solve_captcha=True
+    )
+    
+    return result
+
+# Generate leads
+contacts = await find_company_contacts("OpenAI", "Machine Learning Engineer")
+```
+
+## Error Handling and Debugging
+
+### Session Replay URLs
+Every browser session provides a replay URL for debugging:
+
+```python
+result = await run_browser_task(
+    steel_api_key="your-key",
+    anthropic_api_key="your-key",
+    task="Your task here"
+)
+
+# View the session replay
+print(f"Session replay: {result['session_url']}")
+# Example: https://app.steel.dev/sessions/abc123-def456-ghi789
+```
+
+### Robust Error Handling
+
+```python
+async def robust_automation(task: str, max_retries: int = 3):
+    """Browser automation with error recovery."""
+    
+    for attempt in range(max_retries):
+        try:
+            result = await run_browser_task(
+                steel_api_key=os.getenv("STEEL_API_KEY"),
+                anthropic_api_key=os.getenv("ANTHROPIC_API_KEY"),
+                task=task,
+                max_steps=20
+            )
+            
+            if result['success']:
+                return result
+                
+        except Exception as e:
+            if "rate_limit" in str(e).lower():
+                wait_time = 2 ** attempt  # Exponential backoff
+                await asyncio.sleep(wait_time)
+            elif attempt == max_retries - 1:
+                raise e
+    
+    return {"success": False, "error": "Max retries exceeded"}
+
+# Usage with error recovery
+result = await robust_automation("Complex automation task")
+```
+
+### Rate Limit Handling
+The implementation includes automatic rate limit handling:
+
+```python
+# Rate limits are handled automatically
+result = await run_browser_task(
+    steel_api_key="your-key",
+    anthropic_api_key="your-key", 
+    task="Your task",
+    max_steps=30  # More steps = more API calls
+)
+
+# Check logs for rate limit messages:
+# "Rate limit hit, waiting 1.5s..."
+```
+
+## Configuration Options
+
+### Basic Configuration
+
+```python
+# Simple task
+result = await run_browser_task(
+    steel_api_key="your-key",
+    anthropic_api_key="your-key",
+    task="Go to example.com and get the heading",
+    max_steps=10                    # Limit automation steps
+)
+```
 
 ### Advanced Configuration
 
 ```python
-from langchain_steel import SteelConfig, ProxyConfig
-
-config = SteelConfig(
-    api_key="your-key",
-    session_timeout=900,     # 15 minutes
-    api_timeout=120000,      # 2 minutes
-    use_proxy=True,
-    solve_captcha=True,
-    stealth_mode=True,
-    max_retries=3,
-    
-    # Proxy configuration
-    proxy_config=ProxyConfig(
-        enabled=True,
-        rotate=True,
-        country="US",
-        sticky_session=True
-    ),
-    
-    # Browser options
-    session_options={
-        "viewport_width": 1920,
-        "viewport_height": 1080,
-        "user_agent": "Mozilla/5.0 (compatible; SteelBot/1.0)",
-        "javascript_enabled": True,
-        "images_enabled": False  # Faster loading
-    }
+# Advanced task with all options
+result = await run_browser_task(
+    steel_api_key="your-key",
+    anthropic_api_key="your-key",
+    task="Complex automation task",
+    max_steps=30,                   # Maximum automation steps
+    use_proxy=True,                 # Enable proxy (requires paid plan)
+    solve_captcha=True              # Enable CAPTCHA solving (requires paid plan)
 )
-
-agent = SteelBrowserAgent(config=config)
 ```
 
-### Error Recovery
+### LangChain Tool Configuration
 
 ```python
-def robust_automation(task: str, max_retries: int = 3):
-    """Automation with error recovery and fallbacks."""
-    
-    agent = SteelBrowserAgent()
-    
-    for attempt in range(max_retries):
-        try:
-            # Primary approach
-            result = agent.run(task)
-            return result
-            
-        except Exception as e:
-            print(f"Attempt {attempt + 1} failed: {str(e)}")
-            
-            if "captcha" in str(e).lower():
-                # Enable CAPTCHA solving for retry
-                config = SteelConfig(solve_captcha=True, stealth_mode=True)
-                agent = SteelBrowserAgent(config=config)
-                
-            elif "timeout" in str(e).lower():
-                # Increase timeout for retry
-                config = SteelConfig(api_timeout=180000)  # 3 minutes
-                agent = SteelBrowserAgent(config=config)
-                
-            elif attempt == max_retries - 1:
-                # Final attempt with simplified task
-                simplified_task = f"Navigate to the main page and extract basic information. Original task was: {task}"
-                return agent.run(simplified_task)
-    
-    return None
+from langchain_steel import SteelBrowserAgent
 
-# Usage
-result = robust_automation("""
-Go to complex-site.com, login with credentials,
-navigate through multi-step process, and extract final data
-""")
+# Basic agent
+agent = SteelBrowserAgent()
+
+# Use with parameters
+result = await agent._arun(
+    task="Your automation task",
+    max_steps=25,
+    use_proxy=False,
+    solve_captcha=False
+)
 ```
 
-### Monitoring and Debugging
+## Testing and Development
+
+### Environment Setup
+
+Create a `.env` file:
+```bash
+STEEL_API_KEY=your-steel-api-key
+ANTHROPIC_API_KEY=your-anthropic-api-key
+```
+
+### Simple Test Script
 
 ```python
-import logging
-from langchain_steel.utils.errors import SteelError
+#!/usr/bin/env python3
+import asyncio
+import os
+from dotenv import load_dotenv
+from langchain_steel.agents.computer_use import run_browser_task
 
-# Enable detailed logging
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
+load_dotenv()
 
-def monitored_automation(task: str):
-    """Browser automation with comprehensive monitoring."""
-    
-    config = SteelConfig(
-        api_key="your-key",
-        enable_logging=True
+async def test_browser_agent():
+    result = await run_browser_task(
+        steel_api_key=os.getenv("STEEL_API_KEY"),
+        anthropic_api_key=os.getenv("ANTHROPIC_API_KEY"),
+        task="Go to example.com and tell me what you see",
+        max_steps=8
     )
     
-    agent = SteelBrowserAgent(config=config)
-    
-    try:
-        start_time = time.time()
-        
-        # Add monitoring wrapper to task
-        monitored_task = f"""
-        {task}
-        
-        After completing each major step, provide status update including:
-        - Current page URL
-        - Step completion status  
-        - Any errors encountered
-        - Estimated time remaining
-        """
-        
-        result = agent.run(monitored_task)
-        
-        end_time = time.time()
-        duration = end_time - start_time
-        
-        logger.info(f"Task completed successfully in {duration:.2f} seconds")
-        logger.info(f"Result preview: {str(result)[:200]}...")
-        
-        return result
-        
-    except SteelError as e:
-        logger.error(f"Steel automation failed: {e.message}")
-        if e.details:
-            logger.error(f"Error details: {e.details}")
-        
-        # Take screenshot for debugging
-        screenshot_task = "Take a screenshot of current page state for debugging"
-        try:
-            debug_screenshot = agent.run(screenshot_task)
-            logger.info("Debug screenshot captured")
-        except:
-            pass
-        
-        raise
+    print(f"Success: {result['success']}")
+    print(f"Result: {result['result']}")
+    print(f"Session: {result['session_url']}")
 
-# Usage with monitoring
-result = monitored_automation("""
-Navigate to admin panel, generate monthly report,
-and email it to stakeholders
-""")
+if __name__ == "__main__":
+    asyncio.run(test_browser_agent())
 ```
 
 ## Troubleshooting
 
 ### Common Issues
 
-**"Proxy use is not available on the hobby plan" Error**
+**"Steel.__init__() got an unexpected keyword argument 'api_key'" Error**
 ```
-Solution: The integration defaults to hobby plan compatibility (use_proxy=False).
-If you see this error, it means proxy usage was enabled somewhere.
-Check your configuration or session options.
-```
-
-**"CAPTCHA solving is not available on the hobby plan" Error**
-```
-Solution: The integration defaults to solve_captcha=False for hobby compatibility.
-If you see this error, check that solve_captcha wasn't enabled in your
-configuration or session options.
+Solution: This was fixed in the refactored version. The Steel client now uses
+steel_api_key parameter. Update to the latest version.
 ```
 
-**"Stealth mode is not available on the hobby plan" Error**
+**"Keyboard.press: Unknown key" Error**
 ```
-Solution: The integration defaults to stealth_mode=False for hobby compatibility.
-If you see this error, check that stealth features weren't enabled in your
-configuration or session options.
-```
-
-**"SessionsResource.create() got an unexpected keyword argument" Error**
-```
-Solution: This indicates a parameter mismatch with the Steel SDK.
-Ensure you're using the latest version of langchain-steel that
-maps configuration parameters correctly to the Steel SDK.
+Solution: Key mapping issue fixed in the refactored version. The implementation
+now handles all common key combinations properly.
 ```
 
-**Import Errors**
+**Rate Limit Errors**
 ```
-Solution: Make sure langchain-steel is properly installed:
-pip install langchain-steel
-pip install steel-sdk
+Solution: The implementation includes automatic rate limit handling with
+exponential backoff. If you hit limits frequently, consider:
+- Reducing max_steps 
+- Adding delays between tasks
+- Upgrading your Anthropic plan
 ```
 
-### Plan Upgrade Benefits
+**"Target page, context or browser has been closed" Error**
+```
+Solution: Session management issue. The refactored implementation includes
+better session handling and cleanup. This error should be rare.
+```
 
-If you're on the hobby plan and need advanced features:
-- **Proxy Support**: Geographic targeting and IP rotation
-- **Higher Rate Limits**: More concurrent sessions and requests
-- **Advanced Session Features**: Extended timeouts and persistence
+### Plan Compatibility
 
-Contact Steel support or visit [steel.dev](https://steel.dev) to upgrade your plan.
+**Hobby Plan Users:**
+- Use default settings (`use_proxy=False`, `solve_captcha=False`)
+- Limited to basic browser automation
+- Session replay URLs available for debugging
+
+**Paid Plan Users:**
+- Enable advanced features (`use_proxy=True`, `solve_captcha=True`)
+- Higher rate limits and concurrent sessions
+- Advanced stealth and proxy features
 
 ## API Reference
 
-For detailed API documentation:
-- [Steel Python SDK](https://docs.steel.dev/python)  
-- [PyPI Package](https://pypi.org/project/langchain-steel/)
-- [GitHub Repository](https://github.com/steel-dev/langchain-steel)
+### Core Function
+
+```python
+async def run_browser_task(
+    steel_api_key: str,
+    anthropic_api_key: str,
+    task: str,
+    max_steps: int = 30,
+    use_proxy: bool = False,
+    solve_captcha: bool = False
+) -> Dict[str, Any]:
+    """
+    Run a browser automation task.
+    
+    Returns:
+        {
+            "success": bool,
+            "result": str,
+            "steps": int,
+            "session_url": str
+        }
+    """
+```
+
+### LangChain Tool
+
+```python
+class SteelBrowserAgent(BaseSteelTool):
+    """
+    LangChain tool for browser automation.
+    
+    Methods:
+        run(input: dict) -> str
+        _arun(task: str, max_steps: int = 30, ...) -> str
+    """
+```
+
+For more information:
+- [Steel API Documentation](https://docs.steel.dev)
+- [Anthropic Claude Computer Use](https://docs.anthropic.com/en/docs/agents-and-tools/tool-use/computer-use-tool)
+- [LangChain Tools](https://docs.langchain.com/docs/components/agents/tools/)
