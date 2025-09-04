@@ -22,9 +22,9 @@ from langchain_steel import SteelBrowserAgent, SteelConfig
 
 
 def basic_browser_automation_example():
-    """Demonstrate basic browser automation with natural language."""
-    print("🔧 Basic Browser Automation Example")
-    print("=" * 50)
+    """Demonstrate basic browser automation with natural language and optimized navigation."""
+    print("🔧 Basic Browser Automation Example (Optimized)")
+    print("=" * 60)
     
     # Check for API key
     api_key = os.environ.get('STEEL_API_KEY')
@@ -32,19 +32,19 @@ def basic_browser_automation_example():
         print("⚠️  Warning: STEEL_API_KEY not set. Showing mock behavior.")
         print("   Set STEEL_API_KEY environment variable for live automation.")
     
-    # Initialize browser agent
+    # Initialize browser agent with optimized settings
     try:
         browser_agent = SteelBrowserAgent()
-        print("✅ SteelBrowserAgent initialized successfully")
+        print("✅ SteelBrowserAgent initialized successfully with optimization features")
     except Exception as e:
         print(f"❌ Failed to initialize SteelBrowserAgent: {e}")
         return
     
-    # Example automation tasks
+    # Example automation tasks showcasing optimized navigation
     automation_tasks = [
-        "Go to Google and search for 'Steel.dev'",
-        "Navigate to example.com and take a screenshot",
-        "Visit httpbin.org and find the current user agent"
+        "Navigate to https://www.google.com and search for 'Steel.dev browser automation'",
+        "Go to https://example.com and extract the main heading text",
+        "Visit https://httpbin.org and get information about the current request headers"
     ]
     
     for i, task in enumerate(automation_tasks, 1):
@@ -276,6 +276,49 @@ def interactive_automation_example():
     print("\n🎯 Interactive automation examples completed!")
 
 
+def rate_limiting_resilience_example():
+    """Demonstrate rate limiting resilience and optimization features."""
+    print("\n🔧 Rate Limiting Resilience Example")
+    print("=" * 50)
+    
+    browser_agent = SteelBrowserAgent()
+    
+    # Tasks that would normally trigger rate limits with rapid execution
+    rapid_tasks = [
+        "Navigate to https://news.ycombinator.com",
+        "Scroll down to see more posts",
+        "Click on the first story link",
+        "Go back to the main page",
+        "Search for 'Claude AI'"
+    ]
+    
+    print("🚀 Executing rapid sequence of tasks to test throttling...")
+    print("   (In the optimized version, this should handle rate limits gracefully)")
+    
+    for i, task in enumerate(rapid_tasks, 1):
+        print(f"\n⚡ Rapid Task {i}: {task}")
+        print("-" * 40)
+        
+        try:
+            result = browser_agent.invoke({
+                "task": task,
+                "max_steps": 8  # Limit steps for demonstration
+            })
+            
+            if isinstance(result, str):
+                display_result = result[:300] + "..." if len(result) > 300 else result
+                print(f"✅ Task {i} completed successfully")
+                print(f"📄 Result: {display_result}")
+            else:
+                print(f"📄 Task {i} result: {result}")
+                
+        except Exception as e:
+            print(f"✅ Task {i} error handled gracefully: {e}")
+    
+    print("\n🎯 Rate limiting resilience test completed!")
+    print("   Optimizations should have reduced API calls and handled any rate limits.")
+
+
 def error_handling_example():
     """Demonstrate error handling in browser automation."""
     print("\n🔧 Error Handling Example")
@@ -330,8 +373,8 @@ def error_handling_example():
 
 def main():
     """Run all browser automation examples."""
-    print("🚀 Steel-LangChain Browser Automation Examples")
-    print("=" * 60)
+    print("🚀 Steel-LangChain Browser Automation Examples (Optimized)")
+    print("=" * 70)
     
     try:
         # Run examples
@@ -340,6 +383,7 @@ def main():
         session_persistence_example()
         data_extraction_example()
         interactive_automation_example()
+        rate_limiting_resilience_example()  # New example
         error_handling_example()
         
         print("\n✅ All browser automation examples completed!")

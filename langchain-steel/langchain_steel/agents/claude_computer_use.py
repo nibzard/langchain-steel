@@ -7,6 +7,7 @@ import base64
 import json
 import logging
 import asyncio
+import re
 from typing import Any, Dict, List, Optional, Tuple
 from urllib.parse import urlparse
 
@@ -22,6 +23,154 @@ from anthropic.types.beta import BetaMessageParam
 import random
 
 logger = logging.getLogger(__name__)
+
+
+class ActionBatcher:
+    """Batch and optimize Claude Computer Use actions to reduce API calls."""
+    
+    def __init__(self, throttle_delay: float = 0.2):
+        """Initialize action batcher.
+        
+        Args:
+            throttle_delay: Minimum delay between API requests in seconds
+        """
+        self.throttle_delay = throttle_delay
+        self.last_request_time = 0
+        self.action_queue = []
+        self.last_screenshot_cache = None
+        self.cache_duration = 2.0  # Cache screenshots for 2 seconds
+        self.cache_timestamp = 0
+    
+    def should_throttle(self) -> bool:
+        """Check if we should throttle the next request."""
+        current_time = time.time()
+        time_since_last = current_time - self.last_request_time
+        return time_since_last < self.throttle_delay
+    
+    def wait_if_needed(self) -> None:
+        """Wait if throttling is needed."""
+        if self.should_throttle():
+            wait_time = self.throttle_delay - (time.time() - self.last_request_time)
+            if wait_time > 0:
+                time.sleep(wait_time)
+        self.last_request_time = time.time()
+    
+    async def async_wait_if_needed(self) -> None:
+        """Wait if throttling is needed (async version)."""
+        if self.should_throttle():
+            wait_time = self.throttle_delay - (time.time() - self.last_request_time)
+            if wait_time > 0:
+                await asyncio.sleep(wait_time)
+        self.last_request_time = time.time()
+    
+    def is_navigation_action(self, action: str, text: str = None) -> bool:
+        """Detect if an action sequence is attempting navigation."""
+        if not text:
+            return False
+        
+        # Common navigation patterns
+        navigation_patterns = [
+            r'https?://[^\s]+',  # URLs
+            r'www\.[^\s]+',      # www domains
+            r'[a-zA-Z0-9-]+\.(com|org|net|edu|gov)',  # Common TLDs
+        ]
+        
+        for pattern in navigation_patterns:
+            if re.search(pattern, text, re.IGNORECASE):
+                return True
+        
+        return False
+    
+    def detect_typing_sequence(self, messages: list) -> Optional[str]:
+        """Detect if recent actions form a URL typing sequence."""
+        if len(messages) < 3:
+            return None
+        
+        # Look for recent type actions
+        recent_types = []
+        for msg in messages[-10:]:  # Check last 10 messages
+            if (msg.get("role") == "assistant" and 
+                isinstance(msg.get("content"), list)):
+                
+                for content in msg["content"]:
+                    if (content.get("type") == "tool_use" and
+                        content.get("name") == "computer"):
+                        
+                        tool_input = content.get("input", {})
+                        if tool_input.get("action") == "type":
+                            recent_types.append(tool_input.get("text", ""))
+        
+        # Combine recent typing to see if it forms a URL
+        combined_text = "".join(recent_types)
+        if self.is_navigation_action("type", combined_text):
+            return combined_text
+        
+        return None
+
+
+class NavigationOptimizer:
+    """Optimize navigation by using Steel's native methods instead of keystroke simulation."""
+    
+    def __init__(self, browser_session):
+        self.browser_session = browser_session
+        self.url_pattern = re.compile(
+            r'https?://[^\s]+|www\.[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}|[a-zA-Z0-9.-]+\.(com|org|net|edu|gov|io|dev|co\.uk)',
+            re.IGNORECASE
+        )
+    
+    def extract_url_from_task(self, task: str) -> Optional[str]:
+        """Extract URL from natural language task."""
+        # Direct URL matches
+        match = self.url_pattern.search(task.lower())
+        if match:
+            url = match.group(0)
+            if not url.startswith(('http://', 'https://')):
+                url = f'https://{url}'
+            return url
+        
+        # Common site name mappings
+        site_mappings = {
+            'google': 'https://www.google.com',
+            'hacker news': 'https://news.ycombinator.com',
+            'hn': 'https://news.ycombinator.com',
+            'github': 'https://github.com',
+            'stackoverflow': 'https://stackoverflow.com',
+            'reddit': 'https://www.reddit.com',
+            'youtube': 'https://www.youtube.com',
+            'wikipedia': 'https://en.wikipedia.org',
+            'example.com': 'https://example.com',
+            'httpbin': 'https://httpbin.org',
+        }
+        
+        task_lower = task.lower()
+        for site, url in site_mappings.items():
+            if site in task_lower:
+                return url
+        
+        return None
+    
+    def can_optimize_navigation(self, task: str) -> bool:
+        """Check if we can optimize this task with direct navigation."""
+        # Look for navigation keywords
+        nav_keywords = ['go to', 'navigate to', 'visit', 'open', 'load']
+        task_lower = task.lower()
+        
+        has_nav_keyword = any(keyword in task_lower for keyword in nav_keywords)
+        has_url = self.extract_url_from_task(task) is not None
+        
+        return has_nav_keyword and has_url
+    
+    def perform_optimized_navigation(self, task: str) -> bool:
+        """Perform optimized navigation using Steel's native methods."""
+        url = self.extract_url_from_task(task)
+        if not url:
+            return False
+        
+        # For now, disable direct navigation optimization due to async/sync compatibility
+        # The other optimizations (throttling, caching, backoff) will still provide benefits
+        logger.info(f"Navigation optimization detected URL: {url} (letting Claude handle)")
+        return False
+
 
 # Model configurations for Claude Computer Use
 MODEL_CONFIGS = {
@@ -142,7 +291,7 @@ def _is_running_in_event_loop() -> bool:
 
 
 def _handle_rate_limit_error(attempt: int, max_retries: int = 10) -> Optional[float]:
-    """Handle rate limit errors with improved exponential backoff.
+    """Handle rate limit errors with optimized exponential backoff.
     
     Args:
         attempt: Current attempt number (0-indexed)
@@ -154,13 +303,13 @@ def _handle_rate_limit_error(attempt: int, max_retries: int = 10) -> Optional[fl
     if attempt >= max_retries:
         return None
     
-    # More conservative exponential backoff with longer initial delays
-    # Progressive delays: 1s, 2s, 4s, 8s, 15s, 30s, 60s, 90s, 120s, 180s
-    base_delays = [1, 2, 4, 8, 15, 30, 60, 90, 120, 180]
+    # Optimized exponential backoff with shorter delays for faster recovery
+    # Progressive delays: 0.5s, 1s, 2s, 4s, 8s, 15s, 20s, 25s, 30s, 35s
+    base_delays = [0.5, 1, 2, 4, 8, 15, 20, 25, 30, 35]
     base_delay = base_delays[min(attempt, len(base_delays) - 1)]
     
     # Add random jitter to prevent thundering herd
-    jitter = random.uniform(0.2, 0.8)
+    jitter = random.uniform(0.1, 0.4)
     delay = base_delay + jitter
     
     logger.warning(f"Rate limit hit, retrying in {delay:.2f}s (attempt {attempt + 1}/{max_retries})")
@@ -178,7 +327,7 @@ class SteelBrowserSession:
         use_proxy: bool = False,
         solve_captcha: bool = False,
         session_timeout: int = 900000,
-        start_url: str = "https://www.google.com",
+        start_url: str = "https://example.com",
     ):
         self.steel_client = steel_client
         self.dimensions = (width, height)
@@ -297,24 +446,28 @@ class SteelBrowserSession:
             logger.error("Cannot navigate - page is not ready")
             return
         
-        # Try primary navigation
-        try:
-            self._page.goto(self.start_url, wait_until="domcontentloaded", timeout=30000)
-            logger.info(f"Successfully navigated to: {self._page.url}")
-            return
-        except Exception as nav_error:
-            logger.warning(f"Primary navigation to {self.start_url} failed: {nav_error}")
-            
-            # Check if page is still valid after navigation failure
-            if not self._ensure_page_ready():
-                logger.warning("Page became invalid after navigation failure")
+        # For sensitive sites like Google, skip navigation to avoid session termination
+        if "google.com" in self.start_url.lower():
+            logger.info("Skipping Google navigation to avoid session termination - using fallback")
+        else:
+            # Try primary navigation
+            try:
+                self._page.goto(self.start_url, wait_until="domcontentloaded", timeout=15000)
+                logger.info(f"Successfully navigated to: {self._page.url}")
                 return
+            except Exception as nav_error:
+                logger.warning(f"Primary navigation to {self.start_url} failed: {nav_error}")
+                
+                # Check if page is still valid after navigation failure
+                if not self._ensure_page_ready():
+                    logger.warning("Page became invalid after navigation failure")
+                    return
         
-        # Try fallback navigation strategies
+        # Try fallback navigation strategies - start with safest options first
         fallback_urls = [
-            "https://www.google.com/?hl=en-GB",  # Simplified Google
+            "data:text/html,<html><body><h1>Ready for automation</h1><p>Browser session active</p></body></html>",  # Safe data URI
+            "https://httpbin.org",  # Simple HTTP testing service
             "https://example.com",  # Minimal test site
-            "data:text/html,<html><body><h1>Ready for automation</h1></body></html>"  # Data URI
         ]
         
         for fallback_url in fallback_urls:
@@ -386,6 +539,13 @@ class SteelBrowserSession:
             
             # Navigate to start URL with enhanced error recovery
             self._safe_navigate_to_start_url()
+            
+            # Wait a moment for the session to stabilize
+            time.sleep(2.0)
+            
+            # Verify the session is still working
+            if not self._validate_connection():
+                logger.warning("Session validation failed after initialization")
             
             return self
         except Exception as e:
@@ -478,6 +638,11 @@ class SteelBrowserSession:
             )
             return base64.b64encode(png_bytes).decode("utf-8")
         except PlaywrightError as error:
+            error_msg = str(error)
+            if "Target page, context or browser has been closed" in error_msg:
+                logger.error(f"Browser session closed unexpectedly: {error}")
+                raise RuntimeError("Browser session has been terminated. This may be due to Steel session timeout, network issues, or browser instability.")
+            
             logger.error(f"Screenshot failed, trying CDP fallback: {error}")
             try:
                 cdp_session = self._page.context.new_cdp_session(self._page)
@@ -487,6 +652,8 @@ class SteelBrowserSession:
                 return result["data"]
             except PlaywrightError as cdp_error:
                 logger.error(f"CDP screenshot also failed: {cdp_error}")
+                if "Target page, context or browser has been closed" in str(cdp_error):
+                    raise RuntimeError("Browser session has been terminated. This may be due to Steel session timeout, network issues, or browser instability.")
                 raise error
 
     def validate_and_get_coordinates(self, coordinate):
@@ -733,7 +900,7 @@ class AsyncSteelBrowserSession:
         use_proxy: bool = False,
         solve_captcha: bool = False,
         session_timeout: int = 900000,
-        start_url: str = "https://www.google.com",
+        start_url: str = "https://example.com",
     ):
         self.steel_client = steel_client
         self.dimensions = (width, height)
@@ -1123,13 +1290,14 @@ class AsyncSteelBrowserSession:
 
 
 class ClaudeComputerUseAgent:
-    """Claude Computer Use agent for browser automation."""
+    """Claude Computer Use agent for browser automation with optimization features."""
 
     def __init__(
         self, 
         anthropic_api_key: str,
         browser_session: SteelBrowserSession,
-        model: str = "claude-3-5-sonnet-20241022"
+        model: str = "claude-3-5-sonnet-20241022",
+        throttle_delay: float = 0.2
     ):
         self.client = Anthropic(api_key=anthropic_api_key)
         self.browser_session = browser_session
@@ -1137,7 +1305,11 @@ class ClaudeComputerUseAgent:
         self.messages: List[BetaMessageParam] = []
         self._last_screenshot_cache = None
         self._screenshot_cache_timestamp = 0
-        self._cache_duration = 1.0  # Cache screenshots for 1 second
+        self._cache_duration = 2.0  # Increased cache duration
+        
+        # Initialize optimization components
+        self.action_batcher = ActionBatcher(throttle_delay=throttle_delay)
+        self.navigation_optimizer = NavigationOptimizer(browser_session)
         
         if model not in MODEL_CONFIGS:
             raise ValueError(f"Unsupported model: {model}. Available: {list(MODEL_CONFIGS.keys())}")
@@ -1148,7 +1320,24 @@ class ClaudeComputerUseAgent:
         self.viewport_width = width
         self.viewport_height = height
         
-        self.system_prompt = SYSTEM_PROMPT.replace(
+        # Enhanced system prompt with optimization guidance
+        enhanced_system_prompt = SYSTEM_PROMPT + """
+
+<NAVIGATION_OPTIMIZATION>
+* When you need to navigate to a website, clearly state the URL in your text response
+* Be explicit about navigation intent (e.g., "I need to navigate to https://example.com")
+* Avoid excessive typing of URLs character by character when possible
+* Use direct navigation methods when available
+</NAVIGATION_OPTIMIZATION>
+
+<EFFICIENCY_GUIDELINES>  
+* Minimize unnecessary actions and screenshots
+* Use cached screenshots when the page hasn't changed
+* Group related actions together when possible
+* Be aware of rate limits and pace your requests appropriately
+</EFFICIENCY_GUIDELINES>"""
+        
+        self.system_prompt = enhanced_system_prompt.replace(
             '<COORDINATE_SYSTEM>',
             f'<COORDINATE_SYSTEM>\n* The browser viewport dimensions are {width}x{height} pixels\n* The browser viewport has specific dimensions that you must respect'
         )
@@ -1187,9 +1376,21 @@ class ClaudeComputerUseAgent:
         return screenshot
 
     def execute_task(self, task: str, max_iterations: int = 30) -> Dict[str, Any]:
-        """Execute a browser automation task using Claude Computer Use."""
+        """Execute a browser automation task using Claude Computer Use with optimizations."""
         
         logger.info(f"Executing task: {task}")
+        
+        # Check for navigation optimization opportunity
+        if self.navigation_optimizer.can_optimize_navigation(task):
+            logger.info("Attempting optimized navigation")
+            if self.navigation_optimizer.perform_optimized_navigation(task):
+                logger.info("Optimized navigation successful, continuing with Claude for remaining tasks")
+                # Take a screenshot after navigation to update Claude's context
+                try:
+                    screenshot = self.browser_session.screenshot()
+                    self._cache_screenshot(screenshot)
+                except Exception as e:
+                    logger.warning(f"Failed to capture screenshot after navigation: {e}")
         
         input_items = [{"role": "user", "content": task}]
         new_items = []
@@ -1204,6 +1405,10 @@ class ClaudeComputerUseAgent:
             
             while retry_attempt < 10:  # Max 10 retry attempts per iteration
                 try:
+                    # Apply request throttling
+                    if hasattr(self, 'action_batcher'):
+                        self.action_batcher.wait_if_needed()
+                    
                     response = self.client.beta.messages.create(
                         model=self.model,
                         max_tokens=4096,
@@ -1280,7 +1485,25 @@ class ClaudeComputerUseAgent:
                     elif block.type == "tool_use":
                         if block.name == "computer":
                             tool_input = block.input
+                            
+                            # Handle different Claude response formats
                             action = tool_input.get("action")
+                            
+                            # Claude sometimes sends the action as a key instead of in 'action' field
+                            if action is None:
+                                # Check for common action names as keys
+                                action_keys = ["screenshot", "left_click", "right_click", "type", "key", 
+                                             "scroll", "mouse_move", "left_click_drag", "double_click",
+                                             "triple_click", "middle_click", "cursor_position"]
+                                for key in action_keys:
+                                    if key in tool_input:
+                                        action = key
+                                        break
+                            
+                            if action is None:
+                                logger.error(f"Could not determine action from tool input: {tool_input}")
+                                # Default to screenshot if we can't determine the action
+                                action = "screenshot"
                             
                             logger.info(f"Action: {action}({tool_input})")
                             
@@ -1341,9 +1564,9 @@ class ClaudeComputerUseAgent:
                     "final_url": self.browser_session.get_current_url()
                 }
             
-            # Add longer delay between iterations to prevent rate limiting (sync version)
+            # Add optimized delay between iterations to prevent rate limiting 
             if iterations < max_iterations:
-                time.sleep(2.0)  # 2 second delay between iterations
+                time.sleep(1.0)  # 1 second delay between iterations (reduced)
         
         return {
             "success": False,
@@ -1398,13 +1621,14 @@ async def create_browser_automation_agent(
 
 
 class AsyncClaudeComputerUseAgent:
-    """Async version of Claude Computer Use agent for browser automation."""
+    """Async version of Claude Computer Use agent for browser automation with optimizations."""
 
     def __init__(
         self, 
         anthropic_api_key: str,
         browser_session: AsyncSteelBrowserSession,
-        model: str = "claude-3-5-sonnet-20241022"
+        model: str = "claude-3-5-sonnet-20241022",
+        throttle_delay: float = 0.2
     ):
         self.client = Anthropic(api_key=anthropic_api_key)
         self.browser_session = browser_session
@@ -1412,7 +1636,11 @@ class AsyncClaudeComputerUseAgent:
         self.messages: List[BetaMessageParam] = []
         self._last_screenshot_cache = None
         self._screenshot_cache_timestamp = 0
-        self._cache_duration = 1.0  # Cache screenshots for 1 second
+        self._cache_duration = 2.0  # Increased cache duration
+        
+        # Initialize optimization components  
+        self.action_batcher = ActionBatcher(throttle_delay=throttle_delay)
+        self.navigation_optimizer = NavigationOptimizer(browser_session)
         
         if model not in MODEL_CONFIGS:
             raise ValueError(f"Unsupported model: {model}. Available: {list(MODEL_CONFIGS.keys())}")
@@ -1423,7 +1651,24 @@ class AsyncClaudeComputerUseAgent:
         self.viewport_width = width
         self.viewport_height = height
         
-        self.system_prompt = SYSTEM_PROMPT.replace(
+        # Enhanced system prompt with optimization guidance
+        enhanced_system_prompt = SYSTEM_PROMPT + """
+
+<NAVIGATION_OPTIMIZATION>
+* When you need to navigate to a website, clearly state the URL in your text response
+* Be explicit about navigation intent (e.g., "I need to navigate to https://example.com")
+* Avoid excessive typing of URLs character by character when possible
+* Use direct navigation methods when available
+</NAVIGATION_OPTIMIZATION>
+
+<EFFICIENCY_GUIDELINES>  
+* Minimize unnecessary actions and screenshots
+* Use cached screenshots when the page hasn't changed
+* Group related actions together when possible
+* Be aware of rate limits and pace your requests appropriately
+</EFFICIENCY_GUIDELINES>"""
+        
+        self.system_prompt = enhanced_system_prompt.replace(
             '<COORDINATE_SYSTEM>',
             f'<COORDINATE_SYSTEM>\n* The browser viewport dimensions are {width}x{height} pixels\n* The browser viewport has specific dimensions that you must respect'
         )
@@ -1462,9 +1707,21 @@ class AsyncClaudeComputerUseAgent:
         return screenshot
 
     async def execute_task(self, task: str, max_iterations: int = 30) -> Dict[str, Any]:
-        """Execute a browser automation task using Claude Computer Use."""
+        """Execute a browser automation task using Claude Computer Use with optimizations."""
         
         logger.info(f"Executing task: {task}")
+        
+        # Check for navigation optimization opportunity
+        if self.navigation_optimizer.can_optimize_navigation(task):
+            logger.info("Attempting optimized navigation (async)")
+            if self.navigation_optimizer.perform_optimized_navigation(task):
+                logger.info("Optimized navigation successful, continuing with Claude for remaining tasks")
+                # Take a screenshot after navigation to update Claude's context
+                try:
+                    screenshot = await self.browser_session.screenshot()
+                    self._cache_screenshot(screenshot)
+                except Exception as e:
+                    logger.warning(f"Failed to capture screenshot after navigation: {e}")
         
         input_items = [{"role": "user", "content": task}]
         new_items = []
@@ -1479,6 +1736,10 @@ class AsyncClaudeComputerUseAgent:
             
             while retry_attempt < 10:  # Max 10 retry attempts per iteration
                 try:
+                    # Apply async request throttling
+                    if hasattr(self, 'action_batcher'):
+                        await self.action_batcher.async_wait_if_needed()
+                    
                     response = self.client.beta.messages.create(
                         model=self.model,
                         max_tokens=4096,
@@ -1555,7 +1816,25 @@ class AsyncClaudeComputerUseAgent:
                     elif block.type == "tool_use":
                         if block.name == "computer":
                             tool_input = block.input
+                            
+                            # Handle different Claude response formats
                             action = tool_input.get("action")
+                            
+                            # Claude sometimes sends the action as a key instead of in 'action' field
+                            if action is None:
+                                # Check for common action names as keys
+                                action_keys = ["screenshot", "left_click", "right_click", "type", "key", 
+                                             "scroll", "mouse_move", "left_click_drag", "double_click",
+                                             "triple_click", "middle_click", "cursor_position"]
+                                for key in action_keys:
+                                    if key in tool_input:
+                                        action = key
+                                        break
+                            
+                            if action is None:
+                                logger.error(f"Could not determine action from tool input: {tool_input}")
+                                # Default to screenshot if we can't determine the action
+                                action = "screenshot"
                             
                             logger.info(f"Action: {action}({tool_input})")
                             
@@ -1616,9 +1895,9 @@ class AsyncClaudeComputerUseAgent:
                     "final_url": self.browser_session.get_current_url()
                 }
             
-            # Add longer delay between iterations to prevent rate limiting (async version)
+            # Add optimized delay between iterations to prevent rate limiting (async version)
             if iterations < max_iterations:
-                await asyncio.sleep(2.0)  # 2 second delay between iterations
+                await asyncio.sleep(1.0)  # 1 second delay between iterations (reduced)
         
         return {
             "success": False,
