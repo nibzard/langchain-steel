@@ -263,10 +263,10 @@ class SteelClient:
                 format = self.config.default_format.value
             
             # Prepare scrape parameters
+            # Note: Steel SDK scrape() method doesn't use session_id - it's a direct API call
             scrape_params = {
                 "url": url,
-                "session_id": session.id,
-                "format": format,
+                "format": [format] if isinstance(format, str) else format,  # Steel expects array
                 **scrape_options
             }
             
