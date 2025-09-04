@@ -172,9 +172,9 @@ class SteelConfig:
             Dictionary suitable for Steel.sessions.create() call
         """
         options = {
-            # Valid Steel SDK parameters
-            "api_timeout": self.api_timeout,
+            "use_proxy": self.use_proxy,
             "solve_captcha": self.solve_captcha,
+            "api_timeout": self.api_timeout,  # This is supported by Steel SDK
         }
         
         # Handle proxy configuration - explicitly set to avoid Steel SDK defaults
@@ -190,10 +190,11 @@ class SteelConfig:
         if self.user_agent:
             options["user_agent"] = self.user_agent
         
-        # Add stealth configuration if enabled
-        if self.stealth_mode:
-            options["block_ads"] = True
-            # Note: stealth_config structure needs to be determined from Steel SDK docs
+        # Add proxy configuration - using correct Steel SDK parameters
+        if self.proxy_config and self.use_proxy:
+            # Note: proxy_country and sticky_session are not direct parameters
+            # The Steel SDK uses 'use_proxy' parameter which can be boolean or array
+            pass
         
         # Merge with custom session options (these override defaults)
         options.update(self.session_options)
