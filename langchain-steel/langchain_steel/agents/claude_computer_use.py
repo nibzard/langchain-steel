@@ -178,6 +178,16 @@ MODEL_CONFIGS = {
         "tool_type": "computer_20241022",
         "beta_flag": "computer-use-2024-10-22",
         "description": "Claude 3.5 Sonnet (stable)"
+    },
+    "claude-3-5-sonnet-20250106": {
+        "tool_type": "computer_20241022",
+        "beta_flag": "computer-use-2024-10-22",
+        "description": "Claude 3.5 Sonnet (latest)"
+    },
+    "claude-4-0-20250102": {
+        "tool_type": "computer_20241022", 
+        "beta_flag": "computer-use-2025-01-24",
+        "description": "Claude 4.0 (with enhanced computer use)"
     }
 }
 
@@ -270,6 +280,19 @@ SYSTEM_PROMPT = """You are an expert browser automation assistant operating in a
 * MANDATORY: When you complete the task, your final message MUST start with "TASK_COMPLETED: [brief summary]"
 * MANDATORY: If technical issues prevent completion, your final message MUST start with "TASK_FAILED: [reason]"  
 * Do not write anything after completing the task except the required completion message
+
+<NAVIGATION_OPTIMIZATION>
+* When you need to navigate to a website, clearly state the URL in your text response
+* Be explicit about navigation intent (e.g., "I need to navigate to https://example.com")
+* Prefer keyboard shortcuts and direct navigation over excessive typing
+* Use browser address bar efficiently for URL entry
+
+<EFFICIENCY_GUIDELINES>  
+* Minimize unnecessary actions and screenshots
+* Use cached screenshots when the page hasn't changed significantly
+* Group related actions together when possible
+* Be aware of rate limits and pace your requests appropriately
+* Use keyboard shortcuts when more efficient than mouse clicks
 
 <CRITICAL_REQUIREMENTS>
 * This is fully automated execution - work completely independently
@@ -1586,13 +1609,36 @@ async def create_browser_automation_agent(
     use_proxy: bool = False,
     solve_captcha: bool = False,
     session_timeout: int = 900000,
-    model: str = "claude-3-5-sonnet-20241022"
+    model: str = "claude-3-5-sonnet-20241022",
+    start_url: str = "https://example.com",
+    throttle_delay: float = 0.2
 ) -> Dict[str, Any]:
     """Factory function to create and run browser automation with proper async handling.
     
-    This function automatically detects if we're in an async context and uses the 
-    appropriate browser session type.
+    This function creates an optimized browser automation agent that combines
+    Steel's cloud browser infrastructure with Claude's computer use capabilities.
+    
+    Args:
+        steel_client: Authenticated Steel client instance
+        anthropic_api_key: Anthropic API key for Claude access
+        task: Natural language task description
+        max_iterations: Maximum number of AI interaction steps
+        width: Browser viewport width (default: 1024)
+        height: Browser viewport height (default: 768)
+        use_proxy: Enable Steel proxy network
+        solve_captcha: Enable automatic CAPTCHA solving
+        session_timeout: Session timeout in milliseconds
+        model: Claude model to use for computer use
+        start_url: Initial URL to load in browser
+        throttle_delay: Minimum delay between API requests
+    
+    Returns:
+        Dict with task execution results including success status, result text,
+        iterations executed, final URL, and session viewer URL
     """
+    logger.info(f"Creating browser automation agent for task: {task[:100]}...")
+    logger.info(f"Configuration: {width}x{height}, proxy={use_proxy}, captcha={solve_captcha}")
+    
     # Use async browser session since we're in an async function
     async with AsyncSteelBrowserSession(
         steel_client=steel_client,
@@ -1600,24 +1646,44 @@ async def create_browser_automation_agent(
         height=height,
         use_proxy=use_proxy,
         solve_captcha=solve_captcha,
-        session_timeout=session_timeout
+        session_timeout=session_timeout,
+        start_url=start_url
     ) as browser_session:
         
-        # Create Claude agent with async browser session
+        # Create Claude agent with async browser session and optimizations
         claude_agent = AsyncClaudeComputerUseAgent(
             anthropic_api_key=anthropic_api_key,
             browser_session=browser_session,
-            model=model
+            model=model,
+            throttle_delay=throttle_delay
         )
         
-        # Execute the task
-        result = await claude_agent.execute_task(task, max_iterations=max_iterations)
-        
-        # Add session information
-        if browser_session.session:
-            result["session_url"] = browser_session.session.session_viewer_url
-        
-        return result
+        # Execute the task with enhanced error handling
+        try:
+            result = await claude_agent.execute_task(task, max_iterations=max_iterations)
+            
+            # Add session information and metadata
+            if browser_session.session:
+                result["session_url"] = browser_session.session.session_viewer_url
+                result["session_id"] = browser_session.session.id
+            
+            result["model_used"] = model
+            result["viewport_dimensions"] = f"{width}x{height}"
+            result["optimizations_enabled"] = True
+            
+            logger.info(f"Task completed: success={result.get('success')}, iterations={result.get('iterations')}")
+            return result
+            
+        except Exception as e:
+            logger.error(f"Task execution failed: {e}")
+            return {
+                "success": False,
+                "result": f"Task execution failed: {str(e)}",
+                "iterations": 0,
+                "final_url": browser_session.get_current_url(),
+                "session_url": browser_session.session.session_viewer_url if browser_session.session else None,
+                "error": str(e)
+            }
 
 
 class AsyncClaudeComputerUseAgent:
@@ -1710,6 +1776,7 @@ class AsyncClaudeComputerUseAgent:
         """Execute a browser automation task using Claude Computer Use with optimizations."""
         
         logger.info(f"Executing task: {task}")
+        logger.info(f"Using model: {self.model} with {max_iterations} max iterations")
         
         # Check for navigation optimization opportunity
         if self.navigation_optimizer.can_optimize_navigation(task):
@@ -1897,7 +1964,9 @@ class AsyncClaudeComputerUseAgent:
             
             # Add optimized delay between iterations to prevent rate limiting (async version)
             if iterations < max_iterations:
-                await asyncio.sleep(1.0)  # 1 second delay between iterations (reduced)
+                # Progressive delay: longer delays for more iterations to prevent rate limiting
+                delay = min(1.0 + (iterations * 0.1), 3.0)  # 1.0s to 3.0s progressive delay
+                await asyncio.sleep(delay)
         
         return {
             "success": False,
